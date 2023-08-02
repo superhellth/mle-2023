@@ -2,6 +2,8 @@ import os
 import ujson
 from typing import List
 import numpy as np
+from random import shuffle
+import random
 import events as e
 from .state import GameState
 from collections import defaultdict
@@ -25,7 +27,8 @@ def setup_training(self):
     self.EPSILON = EPSILON
     self.Q = defaultdict(float)
     self.prev_Q = self.Q
-    self.steps_of_current_game = dict()
+    self.experience_buffer = list()
+    self.current_game_list = list()
     self.logger.info("Finished Training Setup")
 
 
@@ -48,8 +51,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     """
     self.logger.info("Game events occured")
     the_old_game_state = GameState(old_game_state)
-    identifier = the_old_game_state.to_hashed_features()
-    self.steps_of_current_game[(identifier, self_action)] = {"old_game_state": the_old_game_state, "new_game_state": GameState(new_game_state), "action": the_old_game_state.adjust_movement(self_action), "events": events}
+    the_old_game_state.to_hashed_features() # ??????????????????????????????????????????????????
+    self.current_game_list.append({"old_game_state": the_old_game_state, "new_game_state": GameState(new_game_state), "action": the_old_game_state.adjust_movement(self_action), "events": events})
 
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
@@ -66,31 +69,39 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     :param self: The same object that is passed to all of your callbacks.
     """
     self.logger.info("Round ended!")
-    for step in self.steps_of_current_game.values():
+    self.experience_buffer.append(self.current_game_list)
+    game_actions_seen = list()
+    for step in sample_training_data(self):
         old_game_state = step["old_game_state"]
         new_game_state = step["new_game_state"]
-        # print("From:")
         old_state_feature_hash = old_game_state.to_hashed_features()
-        # print(old_game_state.get_closest_coin_distance())
-        # print("To:")
         new_state_feature_hash = new_game_state.to_hashed_features()
-        # print(new_game_state.get_closest_coin_distance())
-        v = max([self.prev_Q[(new_state_feature_hash, action)] for action in self.ACTIONS])
         action = step["action"]
+        if old_state_feature_hash == new_state_feature_hash or (old_state_feature_hash, action) in game_actions_seen:
+            continue
+        v = max([self.prev_Q[(new_state_feature_hash, a)] for a in self.ACTIONS])
         auxilliary_reward = auxilliary_rewards(old_game_state, new_game_state)
         event_reward = 0 # reward_from_events(self, step["events"])
         total_update = LEARNING_RATE * (auxilliary_reward + event_reward) # + GAMMA * v - self.prev_Q[((old_state_feature_hash, action))]
-        # print(f"Auxillary reward: {auxilliary_reward}")
-        # print(f"Gamma part: {GAMMA * v - self.prev_Q[((old_state_feature_hash, action))]}")
-        # print(f"Rewarded: {total_update}")
-        if old_state_feature_hash == new_state_feature_hash:
-            continue
         self.Q[(old_state_feature_hash, action)] = self.prev_Q[(old_state_feature_hash, action)] + total_update
+        game_actions_seen.append((old_state_feature_hash, action))
     self.prev_Q = self.Q
-    self.steps_of_current_game = dict()
+    self.current_game_list = list()
     self.logger.info(f"Size of Q: {len(self.Q.keys())}")
     with open(self.TRAINING_DATA_DIRECTORY + "q.json", "w", encoding="utf-8") as f:
         f.write(ujson.dumps(self.Q))
+
+
+def sample_training_data(self, size=400):
+    num_games = len(self.experience_buffer)
+    points_per_game = int(size / num_games)
+    random_sample = []
+    for game in range(num_games):
+        subsample = random.sample(self.experience_buffer[game], points_per_game)
+        shuffle(subsample)
+        random_sample += subsample
+    shuffle(random_sample)
+    return random_sample
 
 
 def auxilliary_rewards(old_game_state: GameState, new_game_state: GameState):
