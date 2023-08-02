@@ -29,6 +29,7 @@ def setup_training(self):
     self.prev_Q = self.Q
     self.experience_buffer = list()
     self.current_game_list = list()
+    self.current_game_hashes = set()
     self.logger.info("Finished Training Setup")
 
 
@@ -51,7 +52,11 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     """
     self.logger.info("Game events occured")
     the_old_game_state = GameState(old_game_state)
-    the_old_game_state.to_hashed_features() # ??????????????????????????????????????????????????
+    game_hash = the_old_game_state.to_hashed_features()
+    if game_hash in self.current_game_hashes:
+        events.append("REPEATED GAMESTATE")
+    else:
+        self.current_game_hashes.add(game_hash) # to adjust movement
     self.current_game_list.append({"old_game_state": the_old_game_state, "new_game_state": GameState(new_game_state), "action": the_old_game_state.adjust_movement(self_action), "events": events})
 
 
@@ -70,21 +75,23 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     """
     self.logger.info("Round ended!")
     self.experience_buffer.append(self.current_game_list)
-    game_actions_seen = list()
-    for step in sample_training_data(self):
-        old_game_state = step["old_game_state"]
-        new_game_state = step["new_game_state"]
-        old_state_feature_hash = old_game_state.to_hashed_features()
-        new_state_feature_hash = new_game_state.to_hashed_features()
-        action = step["action"]
-        if old_state_feature_hash == new_state_feature_hash or (old_state_feature_hash, action) in game_actions_seen:
-            continue
-        v = max([self.prev_Q[(new_state_feature_hash, a)] for a in self.ACTIONS])
-        auxilliary_reward = auxilliary_rewards(old_game_state, new_game_state)
-        event_reward = 0 # reward_from_events(self, step["events"])
-        total_update = LEARNING_RATE * (auxilliary_reward + event_reward) # + GAMMA * v - self.prev_Q[((old_state_feature_hash, action))]
-        self.Q[(old_state_feature_hash, action)] = self.prev_Q[(old_state_feature_hash, action)] + total_update
-        game_actions_seen.append((old_state_feature_hash, action))
+    random_batch = sample_training_data(self)
+    for i, (game_number, step_number, step) in enumerate(random_batch):
+        n = min(1, len(self.experience_buffer[game_number]) - step_number -1)
+        sum = 0
+        current_state = step["old_game_state"]
+        current_hash = current_state.to_hashed_features()
+        current_action = step["action"]
+        for future_step in range(step_number + 1, step_number + n + 1):
+            game_state_before = self.experience_buffer[game_number][future_step - 1]["old_game_state"]
+            game_state_after = self.experience_buffer[game_number][future_step]["old_game_state"]
+            if game_state_before.to_hashed_features() == game_state_after.to_hashed_features():
+                continue
+            final_state = self.experience_buffer[game_number][step_number + n - 1]["new_game_state"]
+            reward = auxilliary_rewards(game_state_before, game_state_after) + reward_from_events(self, events)
+            v = max([self.prev_Q[(final_state.to_hashed_features(), a)] for a in final_state.get_possible_moves()])
+            sum += 0.9**(future_step - step_number - 1) * reward # + GAMMA**n * v - self.prev_Q[(current_hash, current_action)]
+        self.Q[(current_hash, current_action)] = self.prev_Q[(current_hash, current_action)] + LEARNING_RATE * sum
     self.prev_Q = self.Q
     self.current_game_list = list()
     self.logger.info(f"Size of Q: {len(self.Q.keys())}")
@@ -93,11 +100,23 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
 
 def sample_training_data(self, size=400):
+    """Create a random subsample of the experience buffer for training.
+
+    Args:
+        size (int, optional): Size of the sample. Defaults to 400.
+
+    Returns:
+        list: Each entry is a tuple of (game_number, step_number, step)
+    """
     num_games = len(self.experience_buffer)
     points_per_game = int(size / num_games)
     random_sample = []
     for game in range(num_games):
-        subsample = random.sample(self.experience_buffer[game], points_per_game)
+        game_steps = self.experience_buffer[game]
+        points_this_game = min(len(game_steps), points_per_game)
+        subsample_indicies = np.random.choice(np.arange(0, len(game_steps), 1), points_this_game)
+        subsample = [game_steps[i] for i in subsample_indicies]
+        subsample = [(game, subsample_indicies[i], subsample[i]) for i in range(points_this_game)]
         shuffle(subsample)
         random_sample += subsample
     shuffle(random_sample)
@@ -116,7 +135,7 @@ def reward_from_events(self, events: List[str]) -> int:
     certain behavior.
     """
     game_rewards = {
-        e.INVALID_ACTION: -5
+        "REPEATED GAMESTATE": 0
     }
     reward_sum = 0
     for event in events:
