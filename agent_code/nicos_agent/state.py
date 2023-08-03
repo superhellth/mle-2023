@@ -152,7 +152,7 @@ class GameState:
         vector = np.array(nearest_coin) - np.array(feature_agent_position)
         # print(vector)
 
-        return [vector]
+        return [vector, np.array([feature_agent_position[0] % 2, feature_agent_position[1] % 2])]
 
 
     def to_hashed_features(self):

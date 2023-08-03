@@ -31,6 +31,7 @@ def setup_training(self):
     self.current_game_list = list()
     self.current_game_hashes = set()
     self.logger.info("Finished Training Setup")
+    self.previous_agent_position = None
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
@@ -53,10 +54,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     self.logger.info("Game events occured")
     the_old_game_state = GameState(old_game_state)
     game_hash = the_old_game_state.to_hashed_features()
-    if game_hash in self.current_game_hashes:
-        events.append("REPEATED GAMESTATE")
-    else:
-        self.current_game_hashes.add(game_hash) # to adjust movement
+    self.current_game_hashes.add(game_hash) # to adjust movement
     self.current_game_list.append({"old_game_state": the_old_game_state, "new_game_state": GameState(new_game_state), "action": the_old_game_state.adjust_movement(self_action), "events": events})
 
 
@@ -88,7 +86,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
             if game_state_before.to_hashed_features() == game_state_after.to_hashed_features():
                 continue
             final_state = self.experience_buffer[game_number][step_number + n - 1]["new_game_state"]
-            reward = auxilliary_rewards(game_state_before, game_state_after) + reward_from_events(self, events)
+            reward = auxilliary_rewards(game_state_before, game_state_after) # reward_from_events(self, events) +
             v = max([self.prev_Q[(final_state.to_hashed_features(), a)] for a in final_state.get_possible_moves()])
             sum += 0.9**(future_step - step_number - 1) * reward # + GAMMA**n * v - self.prev_Q[(current_hash, current_action)]
         self.Q[(current_hash, current_action)] = self.prev_Q[(current_hash, current_action)] + LEARNING_RATE * sum
@@ -135,7 +133,7 @@ def reward_from_events(self, events: List[str]) -> int:
     certain behavior.
     """
     game_rewards = {
-        "REPEATED GAMESTATE": 0
+        "REPEATED GAMESTATE": -5
     }
     reward_sum = 0
     for event in events:

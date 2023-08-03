@@ -47,30 +47,29 @@ def act(self, game_state: dict) -> str:
     :param game_state: The dictionary that describes everything on the board.
     :return: The action to take as a string.
     """
+    game_state = GameState(game_state)
     if self.train and random.random() < self.EPSILON:
         self.logger.info("Choosing random action due epsilon-greedy policy")
         return np.random.choice(self.ACTIONS, p=[.2, .2, .2, .2, .2])
-    else:
-        game_state = GameState(game_state)
-        hashed_gamestate = game_state.to_hashed_features()
-        self.logger.info("Choosing optimal action")
-        action_values = dict()
-        for action in self.ACTIONS:
-            if (hashed_gamestate, action) in self.Q:
-                action_values[action] = self.Q[(hashed_gamestate, action)]
-            else:
-                action_values[action] = 0
+    hashed_gamestate = game_state.to_hashed_features()
+    self.logger.info("Choosing optimal action")
+    action_values = dict()
+    for action in self.ACTIONS:
+        if (hashed_gamestate, action) in self.Q:
+            action_values[action] = self.Q[(hashed_gamestate, action)]
+        else:
+            action_values[action] = 0
+    # print(action_values)
+    possible_moves = game_state.get_possible_moves()
+    if max([action_values[action] for action in possible_moves]) == 0:
+        self.logger.info("Choosing random action")
+        # print("Choosing random action")
         # print(action_values)
-        possible_moves = game_state.get_possible_moves()
-        if max([action_values[action] for action in possible_moves]) == 0:
-            self.logger.info("Choosing random action")
-            # print("Choosing random action")
-            # print(action_values)
-            return np.random.choice(possible_moves)
-        elif not self.train:
-            print(action_values)
-        action_values = {game_state.adjust_movement(action): action_values[action] for action in action_values}
-        chosen_action = sorted([(action, action_values[action]) for action in possible_moves], key=lambda x: x[1], reverse=True)[0][0]
-        # print(chosen_action)
-        self.logger.info(f"Chose action: {chosen_action}")
-        return chosen_action
+        return np.random.choice(possible_moves)
+    elif not self.train:
+        print(action_values)
+    action_values = {game_state.adjust_movement(action): action_values[action] for action in action_values}
+    chosen_action = sorted([(action, action_values[action]) for action in possible_moves], key=lambda x: x[1], reverse=True)[0][0]
+    # print(chosen_action)
+    self.logger.info(f"Chose action: {chosen_action}")
+    return chosen_action
