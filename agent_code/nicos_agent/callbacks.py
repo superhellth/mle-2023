@@ -22,7 +22,7 @@ def setup(self):
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
     self.logger.info("Agent setup")
-    self.ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT']
+    self.ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
     self.TRAINING_DATA_DIRECTORY = "./training_data/"
     if self.train or not os.path.isfile(self.TRAINING_DATA_DIRECTORY + "q.json"):
         self.logger.info("Setting up model from scratch.")
@@ -50,7 +50,7 @@ def act(self, game_state: dict) -> str:
     game_state = GameState(game_state)
     if self.train and random.random() < self.EPSILON:
         self.logger.info("Choosing random action due epsilon-greedy policy")
-        return np.random.choice(self.ACTIONS, p=[.2, .2, .2, .2, .2])
+        return np.random.choice(self.ACTIONS, p=[.2, .2, .2, .2, .1, .1])
     hashed_gamestate = game_state.to_hashed_features()
     self.logger.info("Choosing optimal action")
     action_values = dict()
@@ -61,6 +61,8 @@ def act(self, game_state: dict) -> str:
             action_values[action] = 0
     # print(action_values)
     possible_moves = game_state.get_possible_moves()
+    action_values = {game_state.adjust_movement(action): action_values[action] for action in action_values}
+    chosen_action = sorted([(action, action_values[action]) for action in possible_moves], key=lambda x: x[1], reverse=True)[0][0]
     if max([action_values[action] for action in possible_moves]) == 0:
         self.logger.info("Choosing random action")
         # print("Choosing random action")
@@ -68,8 +70,8 @@ def act(self, game_state: dict) -> str:
         return np.random.choice(possible_moves)
     elif not self.train:
         print(action_values)
-    action_values = {game_state.adjust_movement(action): action_values[action] for action in action_values}
-    chosen_action = sorted([(action, action_values[action]) for action in possible_moves], key=lambda x: x[1], reverse=True)[0][0]
+        # print(chosen_action)
+        # print(game_state.get_closest_coin_distance())
     # print(chosen_action)
     self.logger.info(f"Chose action: {chosen_action}")
     return chosen_action

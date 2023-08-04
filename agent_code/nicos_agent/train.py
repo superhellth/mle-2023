@@ -1,16 +1,15 @@
 import os
+import sys
 import ujson
 from typing import List
 import numpy as np
 from random import shuffle
 import random
 import events as e
+import settings
 from .state import GameState
 from collections import defaultdict
-
-EPSILON = 0.3
-GAMMA = 1
-LEARNING_RATE = 0.1
+import math
 
 def setup_training(self):
     """
@@ -24,7 +23,9 @@ def setup_training(self):
     if not os.path.exists(self.TRAINING_DATA_DIRECTORY):
         os.mkdir(self.TRAINING_DATA_DIRECTORY)
 
-    self.EPSILON = EPSILON
+    self.EPSILON = 1.0
+    self.STEP_DISCOUNT = 0.25
+    self.LEARNING_RATE = 0.1
     self.Q = defaultdict(float)
     self.prev_Q = self.Q
     self.experience_buffer = list()
@@ -53,9 +54,14 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     """
     self.logger.info("Game events occured")
     the_old_game_state = GameState(old_game_state)
-    game_hash = the_old_game_state.to_hashed_features()
-    self.current_game_hashes.add(game_hash) # to adjust movement
-    self.current_game_list.append({"old_game_state": the_old_game_state, "new_game_state": GameState(new_game_state), "action": the_old_game_state.adjust_movement(self_action), "events": events})
+    the_new_game_state = GameState(new_game_state)
+    old_game_state_hash = the_old_game_state.to_hashed_features()
+    new_game_state_hash = the_new_game_state.to_hashed_features()
+    if old_game_state_hash == new_game_state_hash:
+        events.append("REPEATED GAMESTATE")
+    self.current_game_hashes.add(old_game_state_hash) 
+    self.current_game_list.append({"old_game_state": the_old_game_state, "new_game_state": the_new_game_state,
+                                  "action": the_old_game_state.adjust_movement(self_action), "events": events})
 
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
@@ -71,28 +77,58 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
     :param self: The same object that is passed to all of your callbacks.
     """
+    the_last_game_state = GameState(last_game_state)
+    self.current_game_hashes.add(the_last_game_state.to_hashed_features())
+    self.current_game_list.append({"old_game_state": the_last_game_state, "new_game_state": GameState(None, dead=True),
+                                  "action": the_last_game_state.adjust_movement(last_action), "events": events})
     self.logger.info("Round ended!")
     self.experience_buffer.append(self.current_game_list)
     random_batch = sample_training_data(self)
     for i, (game_number, step_number, step) in enumerate(random_batch):
-        n = min(1, len(self.experience_buffer[game_number]) - step_number -1)
+        n = min(1, len(self.experience_buffer[game_number]) - step_number - 1)
         sum = 0
         current_state = step["old_game_state"]
+        if not current_state.can_agent_escape_bomb():
+            continue
         current_hash = current_state.to_hashed_features()
         current_action = step["action"]
         for future_step in range(step_number + 1, step_number + n + 1):
-            game_state_before = self.experience_buffer[game_number][future_step - 1]["old_game_state"]
+            game_state_before = self.experience_buffer[game_number][future_step -
+                                                                    1]["old_game_state"]
             game_state_after = self.experience_buffer[game_number][future_step]["old_game_state"]
             if game_state_before.to_hashed_features() == game_state_after.to_hashed_features():
                 continue
-            final_state = self.experience_buffer[game_number][step_number + n - 1]["new_game_state"]
-            reward = auxilliary_rewards(game_state_before, game_state_after) # reward_from_events(self, events) +
-            v = max([self.prev_Q[(final_state.to_hashed_features(), a)] for a in final_state.get_possible_moves()])
-            sum += 0.9**(future_step - step_number - 1) * reward # + GAMMA**n * v - self.prev_Q[(current_hash, current_action)]
-        self.Q[(current_hash, current_action)] = self.prev_Q[(current_hash, current_action)] + LEARNING_RATE * sum
+            final_state = self.experience_buffer[game_number][step_number +
+                                                              n - 1]["new_game_state"]
+            # + reward_from_events(self, events)
+            reward = auxilliary_rewards(game_state_before, game_state_after) # + reward_from_events(self, events)
+            # if game_state_before.can_agent_escape_bomb() and not game_state_after.can_agent_escape_bomb():
+            #     print("Made a mistake")
+            #     print(f"Reward: {reward}")
+            #     print(game_state_before.bombs)
+            #     print(game_state_before.agent_position)
+            #     print(game_state_after.agent_position)
+            # print()
+            # print(game_state_before.can_agent_escape_bomb())
+            # print(game_state_after.can_agent_escape_bomb())
+            # print(reward)
+            v = max([self.prev_Q[(final_state.to_hashed_features(), a)]
+                    for a in final_state.get_possible_moves()])
+            # + GAMMA**n * v - self.prev_Q[(current_hash, current_action)]
+            sum += self.STEP_DISCOUNT**(future_step - step_number - 1) * reward
+        self.Q[(current_hash, current_action)] = self.prev_Q[(
+            current_hash, current_action)] + self.LEARNING_RATE * sum
     self.prev_Q = self.Q
     self.current_game_list = list()
     self.logger.info(f"Size of Q: {len(self.Q.keys())}")
+    self.EPSILON *= 0.99
+    if len(self.experience_buffer) % 30 == 0 and self.LEARNING_RATE > 0.001:
+        self.LEARNING_RATE *= 0.95
+    if len(self.experience_buffer) % 50 == 0:
+        print(f" Size of Q after {the_last_game_state.round} rounds: {len(self.Q)}")
+        print(f"Size in memory: {sys.getsizeof(self.Q)}")
+        print(f"Epsilon: {self.EPSILON}")
+        print(f"Learning rate: {self.LEARNING_RATE}")
     with open(self.TRAINING_DATA_DIRECTORY + "q.json", "w", encoding="utf-8") as f:
         f.write(ujson.dumps(self.Q))
 
@@ -112,9 +148,11 @@ def sample_training_data(self, size=400):
     for game in range(num_games):
         game_steps = self.experience_buffer[game]
         points_this_game = min(len(game_steps), points_per_game)
-        subsample_indicies = np.random.choice(np.arange(0, len(game_steps), 1), points_this_game)
+        subsample_indicies = np.random.choice(
+            np.arange(0, len(game_steps), 1), points_this_game)
         subsample = [game_steps[i] for i in subsample_indicies]
-        subsample = [(game, subsample_indicies[i], subsample[i]) for i in range(points_this_game)]
+        subsample = [(game, subsample_indicies[i], subsample[i])
+                     for i in range(points_this_game)]
         shuffle(subsample)
         random_sample += subsample
     shuffle(random_sample)
@@ -122,7 +160,7 @@ def sample_training_data(self, size=400):
 
 
 def auxilliary_rewards(old_game_state: GameState, new_game_state: GameState):
-    return GAMMA * new_game_state.get_potential() - old_game_state.get_potential()
+    return 1 * new_game_state.get_potential() - old_game_state.get_potential()
 
 
 def reward_from_events(self, events: List[str]) -> int:
@@ -133,7 +171,7 @@ def reward_from_events(self, events: List[str]) -> int:
     certain behavior.
     """
     game_rewards = {
-        "REPEATED GAMESTATE": -5
+        e.KILLED_SELF: -20
     }
     reward_sum = 0
     for event in events:
