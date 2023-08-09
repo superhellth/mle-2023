@@ -47,7 +47,7 @@ class GameState:
         new_bombs = [([bomb[0][0], bomb[0][1]], bomb[1] - 1) for bomb in self.bombs]
         if self.is_agent_close_to_danger and not self.is_agent_in_danger or np.max(self.explosion_map) == 1 and self.explosion_map[x][y] == 0:
             return ["WAIT"]
-        if self.agent_bombs_left and self.would_be_survivable:
+        if self.agent_bombs_left and self.would_be_survivable and len(self.coins) == 0:
             possible_moves.append("BOMB")
         if self.is_position_survivable([x, y], new_bombs, hypothetical=True):
             possible_moves.append("WAIT")
@@ -59,6 +59,9 @@ class GameState:
             possible_moves.append("DOWN")
         if self.field[x][y - 1] == 0 and self.explosion_map[x][y - 1] == 0 and self.is_position_survivable([x, y - 1], new_bombs, hypothetical=True):
             possible_moves.append("UP")
+
+        if len(possible_moves) == 0:
+            return ["WAIT"] 
         return possible_moves
 
     def adjust_movement(self, original_move):
@@ -284,15 +287,15 @@ class GameState:
             # print(local_map)
         elif np.max(local_explosion_map) == 0:
             # print("SAFE")
-            # print("No Danger")
-            # print(nearest_bomb)
-            # print(feature_agent_position)
-            feature_dict["agent_to_nearest_coin"] = agent_to_nearest_coin
-            feature_dict["local_map"] = local_map
-            if self.agent_bombs_left:
-                feature_dict["would_bomb_be_surviveable"] = self.would_be_survivable
-            if len(self.bombs) > 0:
-                feature_dict["agent_to_nearest_bomb"] = agent_to_nearest_bomb
+            # coin finding mode
+            if len(self.coins) > 0:
+                feature_dict["agent_to_nearest_coin"] = agent_to_nearest_coin
+            else:
+                feature_dict["local_map"] = local_map
+                # if self.agent_bombs_left:
+                #     feature_dict["would_bomb_be_surviveable"] = self.would_be_survivable
+                # if len(self.bombs) > 0:
+                #     feature_dict["agent_to_nearest_bomb"] = agent_to_nearest_bomb
         # print(feature_list)
         return feature_dict
 

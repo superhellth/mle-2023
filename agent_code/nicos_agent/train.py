@@ -128,7 +128,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.prev_Q = self.Q
     self.current_game_list = list()
     self.logger.info(f"Size of Q: {len(self.Q.keys())}")
-    self.EPSILON *= 0.999
+    self.EPSILON *= 0.995
     if len(self.experience_buffer) % 30 == 0 and self.LEARNING_RATE > 0.001:
         self.LEARNING_RATE *= 0.95
     if len(self.experience_buffer) % 50 == 0:
