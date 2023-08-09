@@ -28,20 +28,12 @@ class GameState:
             self.bombs = game_state["bombs"]
             self.coins = game_state["coins"]
             self.explosion_map = game_state["explosion_map"]
-            closest_bomb = -1
-            self.agent_can_escape_bomb = True
-            if len(self.bombs) > 0:
-                closest_bomb = sorted(self.bombs, key=lambda x: self.get_rockless_distance(
-                    x[0], self.agent_position))[0]
-                if closest_bomb[0][0] == self.agent_position[0] and closest_bomb[0][1] == self.agent_position[1]:
-                    if closest_bomb[1] < 3:
-                        self.agent_can_escape_bomb = False
-                elif closest_bomb[0][0] == self.agent_position[0] and self.agent_position[0] % 2 == 1:
-                    if closest_bomb[1] < 3 - abs(closest_bomb[0][1] - self.agent_position[1]):
-                        self.agent_can_escape_bomb = False
-                elif closest_bomb[0][1] == self.agent_position[1] and self.agent_position[1] % 2 == 1:
-                    if closest_bomb[1] < 3 - abs(closest_bomb[0][0] - self.agent_position[0]):
-                        self.agent_can_escape_bomb = False
+            self.is_surviveable = self.is_position_survivable(
+                self.agent_position, self.bombs)
+            self.would_be_survivable =  self.is_position_survivable(self.agent_position, [
+                ((self.agent_position[0], self.agent_position[1]), 3)], hypothetical=True)
+            self.is_agent_in_danger = self.is_position_in_danger(self.agent_position)
+            self.is_agent_close_to_danger = self.is_position_close_to_danger(self.agent_position)
 
     def get_possible_moves(self):
         """Get a list of all possible moves in the current game state.
@@ -51,18 +43,22 @@ class GameState:
         """
         x = self.agent_position[0]
         y = self.agent_position[1]
-        possible_moves = ["WAIT"]
-        if self.agent_bombs_left:
+        possible_moves = []
+        new_bombs = [([bomb[0][0], bomb[0][1]], bomb[1] - 1) for bomb in self.bombs]
+        if self.is_agent_close_to_danger and not self.is_agent_in_danger or np.max(self.explosion_map) == 1 and self.explosion_map[x][y] == 0:
+            return ["WAIT"]
+        if self.agent_bombs_left and self.would_be_survivable:
             possible_moves.append("BOMB")
-        if y % 2 == 1 and x != 15:
+        if self.is_position_survivable([x, y], new_bombs, hypothetical=True):
+            possible_moves.append("WAIT")
+        if self.field[x + 1][y] == 0 and self.explosion_map[x + 1][y] == 0 and self.is_position_survivable([x + 1, y], new_bombs, hypothetical=True):
             possible_moves.append("RIGHT")
-        if y % 2 == 1 and x != 1:
+        if self.field[x - 1][y] == 0 and self.explosion_map[x - 1][y] == 0 and self.is_position_survivable([x - 1, y], new_bombs, hypothetical=True):
             possible_moves.append("LEFT")
-        if x % 2 == 1 and y != 15:
+        if self.field[x][y + 1] == 0 and self.explosion_map[x][y + 1] == 0 and self.is_position_survivable([x, y + 1], new_bombs, hypothetical=True):
             possible_moves.append("DOWN")
-        if x % 2 == 1 and y != 1:
+        if self.field[x][y - 1] == 0 and self.explosion_map[x][y - 1] == 0 and self.is_position_survivable([x, y - 1], new_bombs, hypothetical=True):
             possible_moves.append("UP")
-
         return possible_moves
 
     def adjust_movement(self, original_move):
@@ -111,10 +107,7 @@ class GameState:
         if self.flipped_horizontal:
             position[1] = 16 - position[1]
         if self.flipped_backslash:
-            old_x = position[0]
-            old_y = position[1]
-            position[0] = old_y
-            position[1] = old_x
+            position[0], position[1] = position[1], position[0]
         return position
 
     def get_shortest_path(self, pos1, pos2, ignore_crates=True):
@@ -178,18 +171,6 @@ class GameState:
         # + 0.01 * (abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1]))
         return dx + dy
 
-    def get_distance(self, pos1, pos2):
-        """Calculate the distance between two coordinates.
-
-        Args:
-            pos1 (list): Position 1.
-            pos2 (list): Position 2.
-
-        Returns:
-            float: Euclidian distance.
-        """
-        return np.linalg.norm(np.array(pos1) - np.array(pos2))
-
     def to_features(self):
         """Convert game state to more generic feature vector.
 
@@ -200,6 +181,7 @@ class GameState:
         # other_agents: position and bombs_left, exploit_symmetry
         # bombs: only nearby, position and timer, exploit symmetry
         # explosion_map: exploit symmetry
+        # path to safety feature
 
         feature_field = self.field
         feature_explosion_map = self.explosion_map
@@ -210,24 +192,22 @@ class GameState:
         # vertical axis
         if self.agent_position[0] > 8:
             self.flipped_vertical = True
-            feature_field = np.fliplr(feature_field)
-            feature_explosion_map = np.fliplr(feature_explosion_map)
+            feature_field = np.flipud(feature_field)
+            feature_explosion_map = np.flipud(feature_explosion_map)
             feature_agent_position[0] = 16 - feature_agent_position[0]
         # horizontal axis
         if self.agent_position[1] > 8:
             self.flipped_horizontal = True
-            feature_field = np.flipud(feature_field)
-            feature_explosion_map = np.flipud(feature_explosion_map)
+            feature_field = np.fliplr(feature_field)
+            feature_explosion_map = np.fliplr(feature_explosion_map)
             feature_agent_position[1] = 16 - feature_agent_position[1]
         # backslash axis
         # if feature_agent_position[0] < feature_agent_position[1]:
         #     self.flipped_backslash = True
         #     feature_field = feature_field.T
+        #     feature_explosion_map = feature_explosion_map.T
         #     # mirror agent position
-        #     old_x = feature_agent_position[0]
-        #     old_y = feature_agent_position[1]
-        #     feature_agent_position[0] = old_y
-        #     feature_agent_position[1] = old_x
+        #     feature_agent_position[0], feature_agent_position[1] = feature_agent_position[1], feature_agent_position[0]
 
         # rotate coins and bombs and filter out closest one
         feature_coins = [np.array(self.adjust_position(
@@ -259,30 +239,176 @@ class GameState:
             agent_to_nearest_bomb = nearest_bomb[0] - \
                 np.array(feature_agent_position)
             nearest_bomb_timer = nearest_bomb[1]
-        agent_can_move_left = self.field[self.agent_position[0] -
-                                         1][self.agent_position[1]] == 0
-        agent_can_move_right = self.field[self.agent_position[0] +
-                                          1][self.agent_position[1]] == 0
-        agent_can_move_up = self.field[self.agent_position[0]
-                                       ][self.agent_position[1] - 1] == 0
-        agent_can_move_down = self.field[self.agent_position[0]
-                                         ][self.agent_position[1] + 1] == 0
+        agent_can_move_left = feature_field[feature_agent_position[0] -
+                                            1][feature_agent_position[1]] == 0
+        agent_can_move_right = feature_field[feature_agent_position[0] +
+                                             1][feature_agent_position[1]] == 0
+        agent_can_move_up = feature_field[feature_agent_position[0]
+                                          ][feature_agent_position[1] - 1] == 0
+        agent_can_move_down = feature_field[feature_agent_position[0]
+                                            ][feature_agent_position[1] + 1] == 0
         local_explosion_map = np.array([[0, feature_explosion_map[feature_agent_position[0]][feature_agent_position[1] - 1], 0],
                                         [feature_explosion_map[feature_agent_position[0] - 1][feature_agent_position[1]], feature_explosion_map[feature_agent_position[0]]
                                             [feature_agent_position[1]], feature_explosion_map[feature_agent_position[0] + 1][feature_agent_position[1]]],
                                         [0, feature_explosion_map[feature_agent_position[0]][feature_agent_position[1] + 1], 0]])
+        local_map = np.array([[0, feature_field[feature_agent_position[0]][feature_agent_position[1] - 1], 0],
+                              [feature_field[feature_agent_position[0] - 1][feature_agent_position[1]], feature_field[feature_agent_position[0]]
+                                            [feature_agent_position[1]], feature_field[feature_agent_position[0] + 1][feature_agent_position[1]]],
+                              [0, feature_field[feature_agent_position[0]][feature_agent_position[1] + 1], 0]])
 
-        feature_list = [agent_can_move_up, agent_can_move_down, agent_can_move_left, agent_can_move_right]
+        if self.dead or not self.can_agent_survive():
+            return -1
+        feature_dict = {}
+        feature_dict["can_move_up"] = agent_can_move_up
+        feature_dict["can_move_down"] = agent_can_move_down
+        feature_dict["can_move_left"] = agent_can_move_left
+        feature_dict["can_move_right"] = agent_can_move_right
         if np.max(local_explosion_map) != 0:
-            feature_list.append(local_explosion_map)
-        if self.position_is_close_to_danger(self.agent_position):
-            feature_list.append(agent_to_nearest_bomb)
-            feature_list.append(nearest_bomb_timer)
+            # print(local_explosion_map)
+            feature_dict["local_explosion_map"] = local_explosion_map
+        if self.is_agent_close_to_danger:
+            # print("IN DANGER")
+            # feature_dict["agent_to_nearest_bomb"] = agent_to_nearest_bomb
+            # print("Danger")
+            # print(nearest_bomb)
+            # print(feature_agent_position)
+            # feature_dict["nearest_bomb_timer"] = nearest_bomb_timer
+            # if self.is_position_in_danger(self.agent_position):
+            nearest_safe_square = self.get_closest_safe_square(self.bombs[0])
+            agent_to_nearest_safe_square = np.array(self.adjust_position(nearest_safe_square) - np.array(feature_agent_position))
+            feature_dict["agent_to_nearest_safe_square"] = agent_to_nearest_safe_square
+            # print(agent_to_nearest_safe_square)
+            # print(feature_bombs)
+            # print(feature_agent_position)
+            # print(agent_to_nearest_safe_square)
+            # print(local_map)
         elif np.max(local_explosion_map) == 0:
-            feature_list.append(agent_to_nearest_coin)
-        return feature_list
+            # print("SAFE")
+            # print("No Danger")
+            # print(nearest_bomb)
+            # print(feature_agent_position)
+            feature_dict["agent_to_nearest_coin"] = agent_to_nearest_coin
+            feature_dict["local_map"] = local_map
+            if self.agent_bombs_left:
+                feature_dict["would_bomb_be_surviveable"] = self.would_be_survivable
+            if len(self.bombs) > 0:
+                feature_dict["agent_to_nearest_bomb"] = agent_to_nearest_bomb
+        # print(feature_list)
+        return feature_dict
 
-    def position_is_in_danger(self, position):
+    def get_closest_safe_square(self, bomb):
+        safe_reachable_squares = self.get_safe_reachable_squares(self.agent_position, bomb)
+        if len(safe_reachable_squares) == 0:
+            return -1
+        return sorted([[pos[0], pos[1]] for pos in safe_reachable_squares], key=lambda x: self.get_rockless_distance([x[0], x[1]], self.agent_position))[0]
+
+    def can_agent_survive(self):
+        """Check if the current game state is surviveable.
+
+        Returns:
+            bool: Surviveability.
+        """
+        if self.dead:
+            return False
+        return self.is_surviveable
+
+    def is_position_survivable(self, agent_position, bombs, hypothetical=False):
+        """Check if the given position is survivable.
+
+        Args:
+            agent_position (list or np.array): Position of agent.
+            bombs (list or np.array): List of bombs.
+
+        Returns:
+            bool: Whether or not position is survivable.
+        """
+        if self.is_position_in_danger(agent_position) or hypothetical:
+            for bomb in bombs:
+                if not self.is_bomb_escapable(agent_position, bomb):
+                    return False
+
+        return True
+
+    def is_bomb_escapable(self, agent_position, bomb):
+        """Check if the given bomb is escapeable. Taking into account crates and rock.
+
+        Args:
+            agent_position (list or np.array): Current position of agent.
+            bomb (list): Bomb to consider.
+
+        Returns:
+            bool: Whether or not bomb is escapeable.
+        """
+        if self.is_bomb_danger_to_position(agent_position, bomb):
+            return len(self.get_safe_reachable_squares(agent_position, bomb)) > 0
+        return True
+
+    def get_safe_reachable_squares(self, agent_position, bomb):
+        """Find all squares reachable in the bomb timer time from the given position that lay outside
+        the explosion of the given bomb.
+
+        Args:
+            agent_position (list or np.array): Position of the agent.
+            bomb (bomb tuple): Position and timer of the given bomb.
+
+        Returns:
+            list: List of reachable squares.
+        """
+        reachable_locations = {(agent_position[0], agent_position[1])}
+        for i in range(bomb[1] + 1):
+            reachable_next_step = set()
+            for location in reachable_locations:
+                possibly_reachable = [[location[0], location[1] + 1], [location[0], location[1] - 1], [
+                    location[0] - 1, location[1]], [location[0] + 1, location[1]]]
+                reachable_next_step |= {
+                    (l[0], l[1]) for l in possibly_reachable if self.field[l[0]][l[1]] == 0}
+            reachable_locations |= reachable_next_step
+        return [pos for pos in reachable_locations if [pos[0], pos[1]] not in self.get_bomb_explosion_squares(bomb[0])]
+
+    def get_bomb_explosion_squares(self, bomb_position):
+        """Get a list of all position the bomb explosion is going to be on.
+
+        Args:
+            bomb_position (list or np.array): Position of bomb.
+
+        Returns:
+            list: List of affected position.
+        """
+        explosion = list()
+        # bomb on open file
+        if bomb_position[1] % 2 == 1:
+            explosion += [[x, bomb_position[1]]
+                          for x in range(max(1, bomb_position[0] - 3), min(15, bomb_position[0] + 3) + 1)]
+        # bomb on open rank
+        if bomb_position[0] % 2 == 1:
+            explosion += [[bomb_position[0], y]
+                          for y in range(max(1, bomb_position[1] - 3), min(15, bomb_position[1] + 3) + 1)]
+        return explosion
+
+    def is_bomb_danger_to_position(self, position, bomb):
+        """Check if the given bomb is a danger to the agent. So check if agent
+        is in range of bomb explosion.
+
+        Args:
+            position (list or np.array): Possible agent position.
+            bomb (list or np.array): Bomb to check.
+
+        Returns:
+            bool: Whether or not agent would die if bomb would explode as is.
+        """
+        # agent on same square as bomb
+        if bomb[0][0] == position[0] and bomb[0][1] == position[1]:
+            return True
+        # agent on same x as bomb
+        elif bomb[0][0] == position[0] and position[0] % 2 == 1:
+            if abs(bomb[0][0] - position[0]) <= 3:
+                return True
+        # agent on same y as bomb
+        elif bomb[0][1] == position[1] and position[1] % 2 == 1:
+            if abs(bomb[0][1] - position[1]) <= 3:
+                return True
+
+    def is_position_in_danger(self, position):
         """Check if the given position is inside the range of a bomb explosion.
 
         Args:
@@ -293,17 +419,11 @@ class GameState:
         """
         if len(self.bombs) > 0:
             for bomb in self.bombs:
-                if bomb[0][0] == position[0] and bomb[0][1] == position[1]:
+                if self.is_bomb_danger_to_position(position, bomb):
                     return True
-                elif bomb[0][0] == position[0] and position[0] % 2 == 1:
-                    if abs(bomb[0][0] - position[0]) <= 3:
-                        return True
-                elif bomb[0][1] == position[1] and position[1] % 2 == 1:
-                    if abs(bomb[0][1] - position[1]) <= 3:
-                        return True
         return False
 
-    def position_is_close_to_danger(self, position):
+    def is_position_close_to_danger(self, position):
         """This checks if any of the squares around the player is in range of a bomb explosion.
 
         Args:
@@ -315,17 +435,9 @@ class GameState:
         nearby_positons = [[position[0], position[1] + 1], [position[0], position[1] - 1],
                            [position[0] - 1, position[1]], [position[0] + 1, position[1]], position]
         for position in nearby_positons:
-            if self.position_is_in_danger(position):
+            if self.is_position_in_danger(position):
                 return True
         return False
-
-    def can_agent_escape_bomb(self):
-        """Find out whether or not the agent can escape the explosion of the closest bomb.
-
-        Returns:
-            bool: True if can survive, False if can't survive.
-        """
-        return self.agent_can_escape_bomb
 
     def to_hashed_features(self):
         """Hash this game state.
@@ -333,13 +445,13 @@ class GameState:
         Returns:
             int: Hash of game state.
         """
-        if self.dead:
-            return 0
         hash_list = list()
         features = self.to_features()
+        if features == -1:
+            return 0
         for feature in features:
             hash_list.append(
-                int(hashlib.md5(str(feature).encode()).hexdigest(), 16))
+                int(hashlib.md5((feature + str(features[feature])).encode()).hexdigest(), 16))
         final_hash = hash_list[0]
         for a_hash in hash_list[1:]:
             final_hash ^= a_hash
@@ -352,20 +464,34 @@ class GameState:
             float: Potential of game state.
         """
         if self.dead:
-            return -30
+            return -300
         closest_coin_distance = self.get_closest_coin_distance()
         if closest_coin_distance == 0:
             add_one = 1
         else:
             add_one = 0
-        if self.can_agent_escape_bomb():
-            if self.position_is_in_danger(self.agent_position):
-                danger_penalty = 2
+        if self.can_agent_survive():
+            # discourage going near bombs
+            if self.is_agent_in_danger:
+                danger_penalty = 1
             else:
                 danger_penalty = 0
-            return 20 * (self.agent_score + add_one) - self.get_closest_coin_distance(k=add_one) - danger_penalty
+            # encourage blowing up crates
+            crate_potential = 0
+            for bomb in self.bombs:
+                affected_tiles = self.get_bomb_explosion_squares(bomb[0])
+                crate_potential += len(
+                    [pos for pos in affected_tiles if self.field[pos[0]][pos[1]] == 1])
+                # potential weights
+                # coin distance: 1
+                # danger penalty: 5 (coin distance + 1)
+                # crate potential: 6 (danger penalty + 1)
+                # coin count: 19 (crate potential * 3 + 1)
+                # agent score: 30 ((15 + 15) * coin distance)
+                # distance to closest bomb
+            return 30 * (self.agent_score + add_one) - self.get_closest_coin_distance(k=add_one) + self.get_closest_bomb_distance() - 5 * danger_penalty + 19 * len(self.coins) + 6 * crate_potential
         else:
-            return -30
+            return -300
 
     def get_closest_coin_distance(self, k=0):
         """Get the distnce to the kth nearest coin to the agent.
@@ -380,3 +506,17 @@ class GameState:
             return sorted([self.get_rockless_distance(coin, self.agent_position) for coin in self.coins])[k]
         else:
             return 0
+
+    def get_closest_bomb_distance(self, k=0):
+        """Get the distnce to the kth nearest bomb to the agent.
+
+        Args:
+            k (int, optional): kth nearest bomb to calculate distance from. Defaults to 0.
+
+        Returns:
+            float: Distance from agent to closest coin.
+        """
+        if len(self.bombs) > k:
+            return sorted([self.get_rockless_distance(bomb[0], self.agent_position) for bomb in self.bombs])[k]
+        else:
+            return 4
