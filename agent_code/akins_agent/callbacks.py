@@ -66,8 +66,37 @@ def act(self, game_state: dict) -> str:
     for coin in game_state['coins']:
         field[coin[0]][coin[1]] = 2
 
-
-    print(field)
+    #rufe auf mit Argument ((x,y,[])
+    def breitenSuche_Coin(coordinates): #currentPath = ['LEFT', 'DOWN', 'LEFT']
+        newCoordinates = []
+        for coordinate in coordinates:
+            #Terminieren wenn Coin gefunden
+            if coordinate[0]-1 >= 0 and field[coordinate[0]-1, coordinate[1]] == 2:
+                    return coordinate[2]+["l"]
+            elif coordinate[0]+1 < 17 and field[coordinate[0]+1, coordinate[1]] == 2:
+                    return coordinate[2]+["r"]
+            elif coordinate[1]-1 >= 0 and field[coordinate[0], coordinate[1]-1] == 2:
+                    return coordinate[2]+["u"]
+            elif coordinate[1]+1 < 17 and field[coordinate[0], coordinate[1]+1] == 2:
+                    return coordinate[2]+["d"]
+            #Wir wollen für jeden Knoten/Koordinate den Nachfolger durchsuchen (also die nächste Ebene durchkämmen)
+            if coordinate[0] - 1 >= 0:  #Prüfe ob wir den Rand noch nicht erreicht haben
+                if field[coordinate[0] - 1][coordinate[1]] != -1 and coordinate[2][-1] != "r": #Prüfe ob es ein legaler Pfad ist und ob wir den schon besucht haben
+                    newCoordinates.append((coordinate[0] - 1, coordinate[1],coordinate[2]+["l"])) # Legitimer Nachfolgeknoten von den wir aus weiter expandieren können
+            if coordinate[0] + 1 < 17:
+                if field[coordinate[0] + 1][coordinate[1]] != -1 and coordinate[2][-1] != "l":
+                    newCoordinates.append((coordinate[0] + 1, coordinate[1],coordinate[2]+["r"]))
+            if coordinate[1] - 1 >= 0:
+                if field[coordinate[0]][coordinate[1] - 1] != -1 and coordinate[2][-1] != "d":
+                    newCoordinates.append((coordinate[0], coordinate[1] - 1,coordinate[2]+["u"]))
+            if coordinate[1] + 1 < 17:
+                if field[coordinate[0]][coordinate[1] + 1] != -1 and coordinate[2][-1] != "u":
+                    newCoordinates.append((coordinate[0], coordinate[1] + 1,coordinate[2]+["d"]))
+        if len(newCoordinates)>0:
+            return breitenSuche_Coin(newCoordinates)
+        else:
+            return "Keine Lösung"
+    print("\n\n",breitenSuche_Coin([(x,y,["i"])]))
 
     #Introduce some randomness in training mode with small probabiliy 10%
     random_prob = .1
@@ -77,7 +106,8 @@ def act(self, game_state: dict) -> str:
         return np.random.choice(possible_actions) #second argument p=[.2, .2, .2, .2, .1, .1]
 
     self.logger.debug("Querying model for action.")
-    return np.random.choice(possible_actions)
+    return "WAIT"
+    #return np.random.choice(possible_actions)
 
 
 def state_to_features(game_state: dict) -> np.array:
