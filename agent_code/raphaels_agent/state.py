@@ -29,7 +29,7 @@ class GameState:
         return self.agent_position
     
     def get_bombs_position(self):
-        return self.agent_bombs_left
+        return self.bombs
     
     def get_coins_position(self):
         return self.coins

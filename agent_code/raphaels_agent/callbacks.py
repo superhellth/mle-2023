@@ -15,21 +15,6 @@ def setup(self):
 
     if self.train or not os.path.isfile(self.TRAINING_DATA_DIRECTORY + "q.json"):
         self.logger.info("Setting up model from scratch.")
-        random_value = np.random.rand(1)[0]
-        self.Q_TABLE = defaultdict(lambda: random_value)
-        self.Q_TABLE = np.random.rand(self.DIMENSIONS_MAP[0],self.DIMENSIONS_MAP[1],len(self.ACTIONS))
-        self.Q_TABLE = 2 * self.Q_TABLE - 1
-
-        q_table_as_list = self.Q_TABLE.tolist()
-        print(q_table_as_list)
-
-        if not os.path.isfile(self.TRAINING_DATA_DIRECTORY + "q.json"):
-            # If the file does not exist, create the directory
-            os.makedirs(os.path.dirname(self.TRAINING_DATA_DIRECTORY), exist_ok=True)
-
-            # Create the file and write data to it
-            with open(self.TRAINING_DATA_DIRECTORY + "q.json", "w", encoding="utf-8") as f:
-                f.write(ujson.dumps(q_table_as_list))
 
     else:
         self.logger.info("Loading model from saved state.")
@@ -40,35 +25,31 @@ def setup(self):
     self.EPSILON = 0.9
 
 
+
 def act(self,game_state : dict):
     game_state = GameState(game_state)
     agent_position = game_state.get_agent_position()
     self.logger.info("Random Q Table model Act.")
     if not self.train and np.random.random(1) > self.EPSILON:
-        return np.random.choice(self.ACTIONS,p=[0.2,0.2,0.2,0.2,0.05,0.15])
+        action = np.random.choice(self.ACTIONS, p=[0.225, 0.225, 0.225, 0.225, 0.05, 0.05])
+        print("Random: "+action)
+        return action
     elif (self.train and np.random.random(1) > self.EPSILON) or agent_position == None:
-        return np.random.choice(self.ACTIONS,p=[0.2,0.2,0.2,0.2,0.05,0.15])
+        return np.random.choice(self.ACTIONS, p=[0.225, 0.225, 0.225, 0.225, 0.05, 0.05])
     else:
-        with open("./training_data/" + "q.json", "r", encoding="utf-8") as f:
-            try:
-                q_table_as_list = ujson.load(f)
-            except ujson.JSONDecodeError as e:
-                print(f"Error decoding JSON: {e}")
-                q_table_as_list = None
-        self.Q_TABLE = np.array(q_table_as_list)
         slice = self.Q_TABLE[agent_position[0], agent_position[1], :]
         action_id = np.argmax(slice)
         subfield=get_9x9_submatrix(game_state.get_field(),agent_position)
         #print(game_state.get_field(),game_state.get_coins_position())
         test = state_to_features(game_state)
-        print(test)
+        #print(test)
         #print(agent_position)
-        return self.ACTIONS[action_id]
+        action = self.ACTIONS[action_id]
+        print("Not Random: "+action)
+        return action
         #return "BOMB"
     
 def state_to_features(game_state) -> defaultdict:
-    coins = game_state.get_coins_position()
-
     #Load GameState and its important informations about the current state
     field = game_state.get_field()
     agent_position = game_state.get_agent_position()
@@ -81,16 +62,17 @@ def state_to_features(game_state) -> defaultdict:
     if coins_available != []:
          close_coin = True
 
-    #print(close_coin,coins_available)
-
+    
     #Calculate closest coin
-    path_to_closest_coin = breitenSuche_Coin(count=0,field=field,coins=coins,coordinates=[((agent_position[0],agent_position[1],["i"]))])
+    path_to_closest_coin = breitenSuche_Coin(count=0,field=field,coins=coin_positions,coordinates=[((agent_position[0],agent_position[1],["i"]))])
     game_state_dict = defaultdict(int)
+    game_state_dict["agent_position"] = agent_position
     game_state_dict["subfield"] = subfield
     game_state_dict["coins_available"] = coins_available
     game_state_dict["close_coin"] = close_coin
     game_state_dict["path_to_closest_coin"] = path_to_closest_coin
     game_state_dict["impossible_moves"] = impossible_moves(field,agent_position)
+    game_state_dict["save_moves"] = save_moves(field,agent_position,game_state.get_bombs_position(),game_state_dict["impossible_moves"])
     return game_state_dict
 
 
@@ -177,3 +159,40 @@ def impossible_moves(field,position):
         impossible_moves.append("DOWN")
     
     return impossible_moves
+
+def save_moves(field, position, bombs,possible_moves):
+    affected_positions = set()
+    if bombs == []:
+        return possible_moves
+    possible_moves_set = set(possible_moves)
+
+    for bomb_position, radius in bombs:
+        x, y = bomb_position
+        for i in range(1, radius + 1):
+            if 0 <= x + i < len(field) and 0 <= y < len(field[0]):
+                affected_positions.add((x + i, y))  # Right
+            if 0 <= x - i < len(field) and 0 <= y < len(field[0]):
+                affected_positions.add((x - i, y))  # Left
+            if 0 <= x < len(field) and 0 <= y + i < len(field[0]):
+                affected_positions.add((x, y + i))  # Down
+            if 0 <= x < len(field) and 0 <= y - i < len(field[0]):
+                affected_positions.add((x, y - i))  # Up
+
+    if position in affected_positions:
+        safe_moves = []
+        x, y = position
+
+        if 0 <= x + 1 < len(field) and (x + 1, y) not in affected_positions:
+            safe_moves.append('RIGHT')
+        if 0 <= x - 1 < len(field) and (x - 1, y) not in affected_positions:
+            safe_moves.append('LEFT')
+        if 0 <= y + 1 < len(field[0]) and (x, y + 1) not in affected_positions:
+            safe_moves.append('DOWN')
+        if 0 <= y - 1 < len(field[0]) and (x, y - 1) not in affected_positions:
+            safe_moves.append('UP')
+        safe_moves_set = set(safe_moves)
+        intersection = safe_moves_set.intersection(possible_moves_set)
+        return list(intersection)
+
+    return possible_moves
+
