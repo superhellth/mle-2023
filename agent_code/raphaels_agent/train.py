@@ -174,6 +174,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     with open(self.TRAINING_DATA_DIRECTORY + "q.json", "w", encoding="utf-8") as f:
                 print("Write")
                 f.write(ujson.dumps(q_table_as_list))
+    self.cummulative_reward = 0
 
 def reward_from_events(self, events: List[str]) -> int:
     """
@@ -183,22 +184,23 @@ def reward_from_events(self, events: List[str]) -> int:
     certain behavior.
     """
     game_rewards = {
-        e.COIN_COLLECTED: 50,
-        e.KILLED_OPPONENT: 50,
+        e.COIN_COLLECTED: 150,
+        e.KILLED_OPPONENT: 100,
         WALKED_TO_NEXT_COIN: 30,
-        e.INVALID_ACTION: -100,
-        e.KILLED_SELF:-10000,
-        e.GOT_KILLED:-500,
-        e.WAITED:-300,
+        e.INVALID_ACTION: -50,
+        e.KILLED_SELF:-100,
+        e.GOT_KILLED:-50,
+        e.WAITED:-30,
         e.MOVED_UP:-1,
         e.MOVED_LEFT:-1,
         e.MOVED_RIGHT:-1,
         e.MOVED_DOWN:-1,
-        WALKED_AWAY_FROM_COIN_OR_WAITED:-30,
-        FIELD_ALREADY_VISITED:-300,
-        MOVE_NOT_SAVE:40,
-        e.SURVIVED_ROUND:5000,
-        COINS_COLLECTED_HIGHER_THAN_MAX:1000
+        WALKED_AWAY_FROM_COIN_OR_WAITED:-100,
+        FIELD_ALREADY_VISITED:-50,
+        MOVE_NOT_SAVE:25,
+        e.SURVIVED_ROUND:250,
+        COINS_COLLECTED_HIGHER_THAN_MAX:1000,
+        e.BOMB_DROPPED:-1000
     }
     reward_sum = 0
     for event in events:

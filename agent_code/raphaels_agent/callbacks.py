@@ -42,7 +42,7 @@ def act(self,game_state : dict):
         subfield=get_9x9_submatrix(game_state.get_field(),agent_position)
         #print(game_state.get_field(),game_state.get_coins_position())
         test = state_to_features(game_state)
-        #print(test)
+        print(test)
         #print(agent_position)
         action = self.ACTIONS[action_id]
         print("Not Random: "+action)
@@ -72,7 +72,7 @@ def state_to_features(game_state) -> defaultdict:
     game_state_dict["close_coin"] = close_coin
     game_state_dict["path_to_closest_coin"] = path_to_closest_coin
     game_state_dict["impossible_moves"] = impossible_moves(field,agent_position)
-    game_state_dict["save_moves"] = save_moves(field,agent_position,game_state.get_bombs_position(),game_state_dict["impossible_moves"])
+    game_state_dict["save_moves"] = save_moves(field,agent_position,game_state.get_bombs_position(),game_state_dict["impossible_moves"],['UP', 'RIGHT', 'DOWN', 'LEFT'])
     return game_state_dict
 
 
@@ -160,15 +160,16 @@ def impossible_moves(field,position):
     
     return impossible_moves
 
-def save_moves(field, position, bombs,possible_moves):
+def save_moves(field, position, bombs,impossible_moves,actions):
     affected_positions = set()
+    possible_moves = [elem for elem in actions if elem not in impossible_moves]
     if bombs == []:
         return possible_moves
     possible_moves_set = set(possible_moves)
 
-    for bomb_position, radius in bombs:
+    for bomb_position, countdown in bombs:
         x, y = bomb_position
-        for i in range(1, radius + 1):
+        for i in range(1, 7 + 1):
             if 0 <= x + i < len(field) and 0 <= y < len(field[0]):
                 affected_positions.add((x + i, y))  # Right
             if 0 <= x - i < len(field) and 0 <= y < len(field[0]):
