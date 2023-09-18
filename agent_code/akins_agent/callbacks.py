@@ -66,37 +66,80 @@ def act(self, game_state: dict) -> str:
     for coin in game_state['coins']:
         field[coin[0]][coin[1]] = 2
 
-    #rufe auf mit Argument ((x,y,[])
-    def breitenSuche_Coin(coordinates): #currentPath = ['LEFT', 'DOWN', 'LEFT']
-        newCoordinates = []
-        for coordinate in coordinates:
-            #Terminieren wenn Coin gefunden
-            if coordinate[0]-1 >= 0 and field[coordinate[0]-1, coordinate[1]] == 2:
-                    return coordinate[2]+["l"]
-            elif coordinate[0]+1 < 17 and field[coordinate[0]+1, coordinate[1]] == 2:
-                    return coordinate[2]+["r"]
-            elif coordinate[1]-1 >= 0 and field[coordinate[0], coordinate[1]-1] == 2:
-                    return coordinate[2]+["u"]
-            elif coordinate[1]+1 < 17 and field[coordinate[0], coordinate[1]+1] == 2:
-                    return coordinate[2]+["d"]
-            #Wir wollen für jeden Knoten/Koordinate den Nachfolger durchsuchen (also die nächste Ebene durchkämmen)
-            if coordinate[0] - 1 >= 0:  #Prüfe ob wir den Rand noch nicht erreicht haben
-                if field[coordinate[0] - 1][coordinate[1]] != -1 and coordinate[2][-1] != "r": #Prüfe ob es ein legaler Pfad ist und ob wir den schon besucht haben
-                    newCoordinates.append((coordinate[0] - 1, coordinate[1],coordinate[2]+["l"])) # Legitimer Nachfolgeknoten von den wir aus weiter expandieren können
-            if coordinate[0] + 1 < 17:
-                if field[coordinate[0] + 1][coordinate[1]] != -1 and coordinate[2][-1] != "l":
-                    newCoordinates.append((coordinate[0] + 1, coordinate[1],coordinate[2]+["r"]))
-            if coordinate[1] - 1 >= 0:
-                if field[coordinate[0]][coordinate[1] - 1] != -1 and coordinate[2][-1] != "d":
-                    newCoordinates.append((coordinate[0], coordinate[1] - 1,coordinate[2]+["u"]))
-            if coordinate[1] + 1 < 17:
-                if field[coordinate[0]][coordinate[1] + 1] != -1 and coordinate[2][-1] != "u":
-                    newCoordinates.append((coordinate[0], coordinate[1] + 1,coordinate[2]+["d"]))
-        if len(newCoordinates)>0:
-            return breitenSuche_Coin(newCoordinates)
-        else:
-            return "Keine Lösung"
-    print("\n\n",breitenSuche_Coin([(x,y,["i"])]))
+    def kuerzesterWegZumTile(x,y,field,tile_value):
+        '''This function searches the closest path to a coin given the agents coordinates (x,y) and the field of the current gamestate and the value of the tile that should be found.
+        For coins it is the value 2.'''
+        visitedCoordinates = []
+        field_length = len(field[0]) #We can deduct the length from variable field, in ths case 17
+        #rufe auf mit Argument ((x,y,[],[]) X,Y Koordinaten [] aktuell mitgeführter Weg [] schon besuche Koordinaten
+        def breitenSuche(coordinates): #currentPath = ['LEFT', 'DOWN', 'LEFT']
+            newCoordinates = [] #Neue Knoten mit der letzten Schrittrichtung mitgeführt
+            for coordinate in coordinates:
+                x = coordinate[0]
+                y = coordinate[1]
+                #Terminieren wenn Coin gefunden
+                if x-1 >= 0 and field[x-1, y] == tile_value:
+                        return coordinate[2]+["l"]
+                elif x+1 < field_length and field[x+1, y] == tile_value:
+                        return coordinate[2]+["r"]
+                elif y-1 >= 0 and field[x, y-1] == 2:
+                        return coordinate[2]+["u"]
+                elif y+1 < field_length and field[x, y+1] == tile_value:
+                        return coordinate[2]+["d"]
+                #Wir wollen für jeden Knoten/Koordinate den Nachfolger durchsuchen (also die nächste Ebene durchkämmen
+                if x - 1 >= 0:  # Prüfe ob wir den Rand noch nicht erreicht haben
+                    if field[x - 1][y] != -1 and field[x - 1][y] != 1 and (x-1,y) not in visitedCoordinates:  # Prüfe ob es ein legaler Pfad ist und ob wir den schon besucht haben
+                        newCoordinates.append((x - 1, y,coordinate[2]+["l"]))  # Legitimer Nachfolgeknoten von den wir aus weiter expandieren können
+                        visitedCoordinates.append((x-1,y))
+                if x + 1 < field_length:
+                    if field[x + 1][y] != -1 and field[x + 1][y] != 1 and (x+1,y) not in visitedCoordinates:
+                        newCoordinates.append((x + 1, y,coordinate[2]+["r"]))
+                        visitedCoordinates.append((x + 1, y))
+                if y - 1 >= 0:
+                    if field[x][y - 1] != -1 and field[x][y-1] != 1 and (x,y-1) not in visitedCoordinates:
+                        newCoordinates.append((x, y - 1,coordinate[2]+["u"]))
+                        visitedCoordinates.append((x, y-1))
+                if y + 1 < field_length:
+                    if field[x][y + 1] != -1 and field[x][y+1] != 1 and (x,y+1) not in visitedCoordinates:
+                        newCoordinates.append((x, y + 1,coordinate[2]+["d"]))
+                        visitedCoordinates.append((x, y + 1))
+            if len(newCoordinates)>0:
+                return breitenSuche(newCoordinates)
+            else:
+                return "Keine Lösung"
+
+        return breitenSuche([(x, y, [])])
+    print(kuerzesterWegZumTile(x,y,game_state['field'],2))
+
+    def cropSevenTiles(x,y,field):
+        '''
+        This function crops the 17x17 field into a 7x7 with the player centered , i.e. the surrounding matrix.
+        This will preprocessed further before used as a state in Q-Learning.
+        '''
+        x+=2
+        y+=2 #Since we increase the matrix for easy cropping we need to adjust the new coordinates
+        field = [[-1]*17]*2 + field + [[-1]*17]*2
+        for i in range(len(field)):
+            field[i] = [-1,-1] + field[i] + [-1,-1]
+        print(field)
+        sevenTiles = []
+        for i in range(-3,4):
+            print(field[x+i][y-3:y+3])
+            sevenTiles.append(field[x+i][y-3:y+3])
+        return sevenTiles
+    print(x,y)
+    print(field)
+    crop = cropSevenTiles(x,y,field.tolist())
+
+    def checkLineOfSight(tile_x,tile_y,x,y,field):
+        '''
+        This function checks if a given tile in the cropped view has any path towards the agent by using BFS.
+        The first two arguments are the tile we want to check its path towards the player at coordinates x,y.
+        The last argument is the cropped view on the field.
+        '''
+        ...
+
+
 
     #Introduce some randomness in training mode with small probabiliy 10%
     random_prob = .1
