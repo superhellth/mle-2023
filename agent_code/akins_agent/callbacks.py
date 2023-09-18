@@ -79,37 +79,37 @@ def act(self, game_state: dict) -> str:
                 y = coordinate[1]
                 #Terminieren wenn Coin gefunden
                 if x-1 >= 0 and field[x-1, y] == tile_value:
-                        return coordinate[2]+["l"]
+                        return coordinate[2]+["LEFT"]
                 elif x+1 < field_length and field[x+1, y] == tile_value:
-                        return coordinate[2]+["r"]
-                elif y-1 >= 0 and field[x, y-1] == 2:
-                        return coordinate[2]+["u"]
+                        return coordinate[2]+["RIGHT"]
+                elif y-1 >= 0 and field[x, y-1] == tile_value:
+                        return coordinate[2]+["UP"]
                 elif y+1 < field_length and field[x, y+1] == tile_value:
-                        return coordinate[2]+["d"]
+                        return coordinate[2]+["DOWN"]
                 #Wir wollen für jeden Knoten/Koordinate den Nachfolger durchsuchen (also die nächste Ebene durchkämmen
                 if x - 1 >= 0:  # Prüfe ob wir den Rand noch nicht erreicht haben
                     if field[x - 1][y] != -1 and field[x - 1][y] != 1 and (x-1,y) not in visitedCoordinates:  # Prüfe ob es ein legaler Pfad ist und ob wir den schon besucht haben
-                        newCoordinates.append((x - 1, y,coordinate[2]+["l"]))  # Legitimer Nachfolgeknoten von den wir aus weiter expandieren können
+                        newCoordinates.append((x - 1, y,coordinate[2]+["LEFT"]))  # Legitimer Nachfolgeknoten von den wir aus weiter expandieren können
                         visitedCoordinates.append((x-1,y))
                 if x + 1 < field_length:
                     if field[x + 1][y] != -1 and field[x + 1][y] != 1 and (x+1,y) not in visitedCoordinates:
-                        newCoordinates.append((x + 1, y,coordinate[2]+["r"]))
+                        newCoordinates.append((x + 1, y,coordinate[2]+["RIGHT"]))
                         visitedCoordinates.append((x + 1, y))
                 if y - 1 >= 0:
                     if field[x][y - 1] != -1 and field[x][y-1] != 1 and (x,y-1) not in visitedCoordinates:
-                        newCoordinates.append((x, y - 1,coordinate[2]+["u"]))
+                        newCoordinates.append((x, y - 1,coordinate[2]+["UP"]))
                         visitedCoordinates.append((x, y-1))
                 if y + 1 < field_length:
                     if field[x][y + 1] != -1 and field[x][y+1] != 1 and (x,y+1) not in visitedCoordinates:
-                        newCoordinates.append((x, y + 1,coordinate[2]+["d"]))
+                        newCoordinates.append((x, y + 1,coordinate[2]+["DOWN"]))
                         visitedCoordinates.append((x, y + 1))
             if len(newCoordinates)>0:
                 return breitenSuche(newCoordinates)
             else:
-                return "Keine Lösung"
+                return False #"Keine Lösung"
 
         return breitenSuche([(x, y, [])])
-    print(kuerzesterWegZumTile(x,y,game_state['field'],2))
+    #print(kuerzesterWegZumTile(x,y,game_state['field'],2))
 
     def cropSevenTiles(x,y,field):
         '''
@@ -121,14 +121,10 @@ def act(self, game_state: dict) -> str:
         field = [[-1]*17]*2 + field + [[-1]*17]*2
         for i in range(len(field)):
             field[i] = [-1,-1] + field[i] + [-1,-1]
-        print(field)
         sevenTiles = []
         for i in range(-3,4):
-            print(field[x+i][y-3:y+3])
             sevenTiles.append(field[x+i][y-3:y+3])
         return sevenTiles
-    print(x,y)
-    print(field)
     crop = cropSevenTiles(x,y,field.tolist())
 
     def checkLineOfSight(tile_x,tile_y,x,y,field):
@@ -137,8 +133,13 @@ def act(self, game_state: dict) -> str:
         The first two arguments are the tile we want to check its path towards the player at coordinates x,y.
         The last argument is the cropped view on the field.
         '''
-        ...
+        field[tile_x][tile_y] = 100 #Marks the tile as a "find me" tile
+        if not kuerzesterWegZumTile(x,y,field,100):
+            return False
+        else:
+            return True
 
+    print(checkLineOfSight(x,y+7,x,y,field)) #schaut beispielsweise, ob im Field eine freie Sicht gibt von Spielerkoordinate und dem Tile drei über ihn.
 
 
     #Introduce some randomness in training mode with small probabiliy 10%
