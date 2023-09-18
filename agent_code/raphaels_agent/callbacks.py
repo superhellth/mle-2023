@@ -3,6 +3,7 @@ import os
 import ujson
 from collections import defaultdict
 from .state import GameState
+from collections import deque
 
 
 def setup(self):
@@ -12,6 +13,7 @@ def setup(self):
     self.DIMENSIONS_MAP = (17,17)
 
     self.TRAINING_DATA_DIRECTORY = "./training_data/"
+    print(self.train)
 
     if self.train or not os.path.isfile(self.TRAINING_DATA_DIRECTORY + "q.json"):
         self.logger.info("Setting up model from scratch.")
@@ -30,22 +32,26 @@ def act(self,game_state : dict):
     game_state = GameState(game_state)
     agent_position = game_state.get_agent_position()
     self.logger.info("Random Q Table model Act.")
-    if not self.train and np.random.random(1) > self.EPSILON:
+    """if not self.train and np.random.random(1) > self.EPSILON:
+        action = np.random.choice(self.ACTIONS, p=[0.225, 0.225, 0.225, 0.225, 0.05, 0.05])
+        print("Random: "+action)
+        return action"""
+    if self.train and np.random.random(1) > self.EPSILON:
         action = np.random.choice(self.ACTIONS, p=[0.225, 0.225, 0.225, 0.225, 0.05, 0.05])
         print("Random: "+action)
         return action
-    elif (self.train and np.random.random(1) > self.EPSILON) or agent_position == None:
-        return np.random.choice(self.ACTIONS, p=[0.225, 0.225, 0.225, 0.225, 0.05, 0.05])
     else:
         slice = self.Q_TABLE[agent_position[0], agent_position[1], :]
         action_id = np.argmax(slice)
         subfield=get_9x9_submatrix(game_state.get_field(),agent_position)
         #print(game_state.get_field(),game_state.get_coins_position())
         test = state_to_features(game_state)
-        print(test)
+        #print(test)
         #print(agent_position)
         action = self.ACTIONS[action_id]
-        print("Not Random: "+action)
+        if action == "BOMB":
+            print("BOMB")
+        #print("Not Random: "+action)
         return action
         #return "BOMB"
     
@@ -160,7 +166,9 @@ def impossible_moves(field,position):
     
     return impossible_moves
 
-def save_moves(field, position, bombs,impossible_moves,actions):
+from collections import deque
+
+def save_moves(field, position, bombs, impossible_moves, actions):
     affected_positions = set()
     possible_moves = [elem for elem in actions if elem not in impossible_moves]
     if bombs == []:
@@ -179,6 +187,8 @@ def save_moves(field, position, bombs,impossible_moves,actions):
             if 0 <= x < len(field) and 0 <= y - i < len(field[0]):
                 affected_positions.add((x, y - i))  # Up
 
+    affected_bombs = [(bomb_position, countdown) for bomb_position, countdown in bombs if bomb_position in affected_positions]
+
     if position in affected_positions:
         safe_moves = []
         x, y = position
@@ -193,7 +203,32 @@ def save_moves(field, position, bombs,impossible_moves,actions):
             safe_moves.append('UP')
         safe_moves_set = set(safe_moves)
         intersection = safe_moves_set.intersection(possible_moves_set)
-        return list(intersection)
+
+        safe_moves = list(intersection)
+        if safe_moves != []:
+            return safe_moves
+        else:
+            queue = deque([(x, y, 0, [])])
+            visited = set()
+            if len([countdown for _, countdown in affected_bombs])==0:
+                step_limit = 1
+            else:
+                step_limit = min([countdown for _, countdown in affected_bombs])
+            while queue:
+                cx, cy, steps, path = queue.popleft()
+                if (cx, cy) not in visited and field[cx][cy] != -1:
+                    visited.add((cx, cy))
+                    if (cx, cy) not in affected_positions:
+                        # and steps < min([countdown for _, countdown in affected_bombs])
+                        return path
+
+                    if steps < step_limit:
+                        for dx, dy, move in [(1, 0, 'RIGHT'), (-1, 0, 'LEFT'), (0, 1, 'DOWN'), (0, -1, 'UP')]:
+                            nx, ny = cx + dx, cy + dy
+                            if 0 <= nx < len(field) and 0 <= ny < len(field[0]):
+                                queue.append((nx, ny, steps + 1, path + [move]))
+
+            return ["Position not survivable"]
 
     return possible_moves
 

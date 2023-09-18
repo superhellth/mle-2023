@@ -104,7 +104,7 @@ def main(argv = None):
     agent_group = play_parser.add_mutually_exclusive_group()
     agent_group.add_argument("--my-agent", type=str, help="Play agent of name ... against three rule_based_agents")
     agent_group.add_argument("--agents", type=str, nargs="+", default=["rule_based_agent"] * s.MAX_AGENTS, help="Explicitly set the agent names in the game")
-    play_parser.add_argument("--train", default=0, type=int, choices=[0, 1, 2, 3, 4],
+    play_parser.add_argument("--train", default=10, type=int, choices=[0, 1, 2, 3, 4],
                              help="First … agents should be set to training mode")
     play_parser.add_argument("--continue-without-training", default=False, action="store_true")
     #play_parser.add_argument("--single-process", default=False, action="store_true")
@@ -113,7 +113,7 @@ def main(argv = None):
 
     play_parser.add_argument("--seed", type=int, help="Reset the world's random number generator to a known number for reproducibility")
 
-    play_parser.add_argument("--n-rounds", type=int, default=1000, help="How many rounds to play")
+    play_parser.add_argument("--n-rounds", type=int, default=500, help="How many rounds to play")
     play_parser.add_argument("--save-replay", const=True, default=False, action='store', nargs='?', help='Store the game as .pt for a replay')
     play_parser.add_argument("--match-name", help="Give the match a name")
 

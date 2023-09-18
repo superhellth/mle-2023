@@ -25,9 +25,11 @@ WALKED_AWAY_FROM_COIN_OR_WAITED =  "WALKED_AWAY_FROM_COIN_OR_WAITED"
 FIELD_ALREADY_VISITED = "FIELD_ALREADY_VISITED"
 MOVE_NOT_SAVE = "MOVE_NOT_SAVE"
 COINS_COLLECTED_HIGHER_THAN_MAX = "COINS_COLLECTED_HIGHER_THAN_MAX"
+ROUND_WITHOUT_BOMBS = "ROUND_WITHOUT_BOMBS"
 
 
 def setup_training(self):
+    print("Alles BlaBla")
     """
     Initialise self for training purpose.
 
@@ -46,24 +48,30 @@ def setup_training(self):
     self.DIMENSIONS_MAP = (17,17)
     self.EPSILON = 0.9
     self.Q_TABLE = defaultdict(float)
-    random_value = np.random.rand(1)[0]
-    self.Q_TABLE = defaultdict(lambda: random_value)
-    self.Q_TABLE = np.random.rand(self.DIMENSIONS_MAP[0],self.DIMENSIONS_MAP[1],len(self.ACTIONS))
-    self.Q_TABLE = 2 * self.Q_TABLE - 1
     self.prev_Q_TABLE = self.Q_TABLE
-
-    q_table_as_list = self.Q_TABLE.tolist()
     #print(q_table_as_list)
 
     if not os.path.isfile(self.TRAINING_DATA_DIRECTORY + "q.json"):
         # If the file does not exist, create the directory
         os.makedirs(os.path.dirname(self.TRAINING_DATA_DIRECTORY), exist_ok=True)
 
-    # Create the file and write data to it
-    with open(self.TRAINING_DATA_DIRECTORY + "q.json", "w", encoding="utf-8") as f:
-        f.write(ujson.dumps(q_table_as_list))
+        # Create the file and write data to it
+        with open(self.TRAINING_DATA_DIRECTORY + "q.json", "w", encoding="utf-8") as f:
+            print("Create")
+            random_value = np.random.rand(1)[0]
+            self.Q_TABLE = defaultdict(lambda: random_value)
+            self.Q_TABLE = np.random.rand(self.DIMENSIONS_MAP[0],self.DIMENSIONS_MAP[1],len(self.ACTIONS))
+            self.Q_TABLE = 2 * self.Q_TABLE - 1
+            q_table_as_list = self.Q_TABLE.tolist()
+            f.write(ujson.dumps(q_table_as_list))
+    else:
+         self.logger.info("Loading model from saved state.")
+         print("Load")
+         with open(self.TRAINING_DATA_DIRECTORY + "q.json", "rb") as file:
+            loaded_dict = ujson.loads(file.read())
+            self.Q_TABLE = np.array(loaded_dict)
 
-    self.LEARNING_RATE = 0.1
+    self.LEARNING_RATE = 0.3
     self.DISCOUNT = 0.9
     self.ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
     self.cummulative_reward = 0
@@ -121,19 +129,21 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     if self_action in old_features["impossible_moves"]:
         events.append(e.INVALID_ACTION)
     if self.already_visited[new_agent_position] == 1 or self_action == "WAIT":
-        print("ALREADY THERE")
+        #print("ALREADY THERE")
         events.append(FIELD_ALREADY_VISITED)
-    if not self_action in old_features["save_moves"]:
+    if self_action in old_features["save_moves"]:
          events.append(MOVE_NOT_SAVE)
+    if self_action != "BOMB":
+         events.append(ROUND_WITHOUT_BOMBS)
 
     self.transitions.append(Transition(state_to_features(old_game_state), self_action, state_to_features(new_game_state), reward_from_events(self, events)))
-    
     self_action_index = self.ACTIONS.index(self_action)
     current_q_value = self.Q_TABLE[old_agent_position][self_action_index]
     max_future_q_value = max(self.Q_TABLE[new_agent_position][i] for i in range(len(self.ACTIONS)))
     reward = reward_from_events(self, events)
+    #print(reward)
     self.cummulative_reward += reward
-    new_q_value = current_q_value + self.LEARNING_RATE * (reward + self.DISCOUNT * max_future_q_value - current_q_value)
+    new_q_value = (1-self.LEARNING_RATE)*current_q_value + self.LEARNING_RATE * (reward + self.DISCOUNT * max_future_q_value)
     self.Q_TABLE[old_agent_position][self_action_index] = new_q_value
     self.already_visited[new_agent_position] = 1
 
@@ -165,7 +175,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     last_agent_position = last_game_state.get_agent_position()
     current_q_value = self.Q_TABLE[last_agent_position][last_action_index]
     self.Q_TABLE[last_agent_position][last_action_index] = (1-self.LEARNING_RATE)*current_q_value+self.LEARNING_RATE*self.cummulative_reward
-
+    #print(self.cummulative_reward)
     # Store the model
     q_table_as_list = self.Q_TABLE.tolist()
     self.already_visited = np.zeros(self.DIMENSIONS_MAP)
@@ -185,22 +195,23 @@ def reward_from_events(self, events: List[str]) -> int:
     """
     game_rewards = {
         e.COIN_COLLECTED: 150,
-        e.KILLED_OPPONENT: 100,
-        WALKED_TO_NEXT_COIN: 30,
-        e.INVALID_ACTION: -50,
-        e.KILLED_SELF:-100,
-        e.GOT_KILLED:-50,
-        e.WAITED:-30,
+        #e.KILLED_OPPONENT: 100,
+        WALKED_TO_NEXT_COIN: 20,
+        e.INVALID_ACTION: -100,
+        e.KILLED_SELF:-10000,
+        #e.GOT_KILLED:-50,
+        e.WAITED:-100,
         e.MOVED_UP:-1,
         e.MOVED_LEFT:-1,
         e.MOVED_RIGHT:-1,
         e.MOVED_DOWN:-1,
         WALKED_AWAY_FROM_COIN_OR_WAITED:-100,
-        FIELD_ALREADY_VISITED:-50,
-        MOVE_NOT_SAVE:25,
-        e.SURVIVED_ROUND:250,
-        COINS_COLLECTED_HIGHER_THAN_MAX:1000,
-        e.BOMB_DROPPED:-1000
+        FIELD_ALREADY_VISITED:-450,
+        #MOVE_NOT_SAVE:25,
+        #e.SURVIVED_ROUND:250,
+        COINS_COLLECTED_HIGHER_THAN_MAX:10000,
+        e.BOMB_DROPPED:-1000,
+        ROUND_WITHOUT_BOMBS:450
     }
     reward_sum = 0
     for event in events:
