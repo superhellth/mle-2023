@@ -70,8 +70,6 @@ def act(self, game_state: dict) -> str:
         For coins it is the value 2.'''
         visitedCoordinates = []
         field_length = len(field[0])  # We can deduct the length from variable field, in ths case 17
-        print(field_length)
-
         # rufe auf mit Argument ((x,y,[],[]) X,Y Koordinaten [] aktuell mitgeführter Weg [] schon besuche Koordinaten
         def breitenSuche(coordinates):  # currentPath = ['LEFT', 'DOWN', 'LEFT']
             newCoordinates = []  # Neue Knoten mit der letzten Schrittrichtung mitgeführt
@@ -141,14 +139,36 @@ def act(self, game_state: dict) -> str:
         The first two arguments are the tile we want to check its path towards the player at coordinates x,y.
         The last argument is the cropped view on the field.
         '''
+        old_Tile_value = field[tile_x][tile_y]
         field[tile_x][tile_y] = 100  # Marks the tile as a "find me" tile
         if not kuerzesterWegZumTile(x, y, field, 100):
+            field[tile_x][tile_y] = old_Tile_value
             return False
         else:
+            field[tile_x][tile_y] = old_Tile_value
             return True
 
-    print(checkLineOfSight(0, 0, 3, 3,crop))  #schaut beispielsweise, ob im Field eine freie Sicht gibt von Spielerkoordinate und dem Tile drei über ihn.
+    def reduceInformation(crop):
+        '''
+        This function takes the cropped matrix and reduces unrelevant information within this crop.
+        We specifically set all Tiles to the value 0 that are not accessible by the centered player.
+        The purpose of this function is to reduce the amount of possible states the agent has to train for.
+        '''
+        crop_length = len(crop[0])
+        for tile_x in range(crop_length): #Wir schauen alle Tiles an, ob eine Verbindung zum Spieler gibt. Wenn nicht => unnötige Information
+            for tile_y in range(crop_length):
+                if not checkLineOfSight(tile_x,tile_y,3,3,crop):
+                    crop[tile_x][tile_y] = 0
+        return crop
+    #print(checkLineOfSight(0, 0, 3, 3,crop))  #schaut beispielsweise, ob im Field eine freie Sicht gibt von Spielerkoordinate und dem Tile drei über ihn.
 
+    print("\nPre: ")
+    for element in crop:
+        print(element)
+    reduceInformation(crop)
+    print("\nPost: ")
+    for element in crop:
+        print(element)
     # Introduce some randomness in training mode with small probabiliy 10%
     random_prob = .1
     if self.train and random.random() < random_prob:
