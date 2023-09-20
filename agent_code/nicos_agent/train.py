@@ -78,8 +78,9 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     """
     the_last_game_state = GameState(last_game_state)
     self.current_game_hashes.add(the_last_game_state.to_hashed_features())
-    self.current_game_list.append({"old_game_state": the_last_game_state, "new_game_state": GameState(None, dead=True),
-                                  "action": the_last_game_state.adjust_movement(last_action), "events": events})
+    if last_game_state["step"] < 390:
+        self.current_game_list.append({"old_game_state": the_last_game_state, "new_game_state": GameState(None, dead=True),
+                                    "action": the_last_game_state.adjust_movement(last_action), "events": events})
     self.logger.info(f"Round {the_last_game_state.round} ended!")
     self.experience_buffer.append(self.current_game_list)
     random_batch = sample_training_data(self, size=200)
@@ -101,10 +102,22 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         # other_state = self.experience_buffer[game_number][step_number + 1]["old_game_state"]
         # print(other_state.to_features())
         # print(other_state.agent_position)
+        killed_by_waiting = False
         for future_step in range(step_number + 1, step_number + n + 1):
             game_state_before = self.experience_buffer[game_number][future_step -
                                                                     1]["old_game_state"]
             game_state_after = self.experience_buffer[game_number][future_step]["old_game_state"]
+            print_components = False
+
+            if future_step == step_number + 1 and current_action == "WAIT" and not game_state_after.can_agent_survive():
+                killed_by_waiting = True
+
+            # if current_action == "WAIT":
+            #     print_components = True
+
+            # gamestate is not surviveable -> don't need to learn
+            if not game_state_before.can_agent_survive():
+                break
             # nothing happend between gamestates
             if game_state_before.to_hashed_features() == game_state_after.to_hashed_features():
                 continue
@@ -114,22 +127,39 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
             final_state = self.experience_buffer[game_number][step_number +
                                                               n - 1]["new_game_state"]
             # + reward_from_events(self, events)
-            reward = auxilliary_rewards(game_state_before, game_state_after) # + reward_from_events(self, events)
+            reward = auxilliary_rewards(game_state_before, game_state_after, print_components=print_components) # + reward_from_events(self, events)
             if n > 1 and final_state.get_potential() > 0:
                 v = max([self.prev_Q[(final_state.to_hashed_features(), a)]
                         for a in final_state.get_possible_moves()])
             else:
                 v = 0
             # + GAMMA**n * v - self.prev_Q[(current_hash, current_action)]
-            sum += self.STEP_DISCOUNT**(future_step - step_number - 1) * reward # + self.STEP_DISCOUNT**n * v - self.prev_Q[(current_hash, current_action)]
+            weight_of_step = self.STEP_DISCOUNT**(future_step - step_number - 1) * reward # + self.STEP_DISCOUNT**n * v - self.prev_Q[(current_hash, current_action)]
+            # if current_action == "WAIT" and current_state.bombs != [] and current_state.bombs[0][1] == 0:
+            #     print(" - ")
+            #     print(weight_of_step)
+            sum += weight_of_step
+        old_q = self.Q[(current_hash, current_action)]
         self.Q[(current_hash, current_action)] = self.prev_Q[(
             current_hash, current_action)] + self.LEARNING_RATE * sum
+        # if current_action == "WAIT" and sum < 0 and not killed_by_waiting:
+        #     print("Current State:")
+        #     print(f"Agent pos: {current_state.agent_position}")
+        #     print(f"Is agent in danger: {current_state.is_agent_in_danger}")
+        #     print(current_state.bombs)
+        #     print(current_state.field)
+        #     print(f"Rewarded: {sum}")
+        #     print(f"Old value of Q: {old_q}")
+        #     print(f"New value of Q: {self.Q[(current_hash, current_action)]}")
+        #     print("-------------")
+        #     print()
         # print(f"Rewarded: {sum}")
     self.prev_Q = self.Q
     self.current_game_list = list()
     self.logger.info(f"Size of Q: {len(self.Q.keys())}")
-    self.EPSILON *= 0.995
-    if len(self.experience_buffer) % 30 == 0 and self.LEARNING_RATE > 0.001:
+    if self.EPSILON > 0.03:
+        self.EPSILON *= 0.998
+    if len(self.experience_buffer) % 30 == 0 and self.LEARNING_RATE > 0.01:
         self.LEARNING_RATE *= 0.95
     if len(self.experience_buffer) % 50 == 0:
         print(f" Size of Q after {the_last_game_state.round} rounds: {len(self.Q)}")
@@ -172,8 +202,15 @@ def sample_training_data(self, size=400):
     return random_sample
 
 
-def auxilliary_rewards(old_game_state: GameState, new_game_state: GameState):
-    return 1 * new_game_state.get_potential() - old_game_state.get_potential()
+def auxilliary_rewards(old_game_state: GameState, new_game_state: GameState, print_components=False):
+    # print("Old game state:")
+    pot0 = old_game_state.get_potential(print_components=print_components)
+    # print(f"Old game state potential: {pot0}")
+    # print()
+    # print("New game state:")
+    pot1 = new_game_state.get_potential(print_components=print_components)
+    # print(f"New game state potential: {pot1}")
+    return pot1 - pot0
 
 
 def reward_from_events(self, events: List[str]) -> int:
