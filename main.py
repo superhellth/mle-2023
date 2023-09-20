@@ -104,10 +104,10 @@ def main(argv = None):
     agent_group = play_parser.add_mutually_exclusive_group()
     agent_group.add_argument("--my-agent", type=str, help="Play agent of name ... against three rule_based_agents")
     agent_group.add_argument("--agents", type=str, nargs="+", default=["rule_based_agent"] * s.MAX_AGENTS, help="Explicitly set the agent names in the game")
-    play_parser.add_argument("--train", default=0, type=int, choices=[0, 1, 2, 3, 4],
+    play_parser.add_argument("--train", default=10, type=int, choices=[0, 1, 2, 3, 4],
                              help="First … agents should be set to training mode")
     play_parser.add_argument("--continue-without-training", default=False, action="store_true")
-    # play_parser.add_argument("--single-process", default=False, action="store_true")
+    #play_parser.add_argument("--single-process", default=False, action="store_true")
 
     play_parser.add_argument("--scenario", default="classic", choices=s.SCENARIOS)
 

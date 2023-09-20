@@ -100,6 +100,86 @@ def act(self, game_state: dict) -> str:
     return chosen_action
 
 
+def cropSevenTiles(game_state):
+    '''
+    This function crops the 17x17 field into a 7x7 with the player centered , i.e. the surrounding matrix.
+    This will preprocessed further before used as a state in Q-Learning.
+    '''
+    x,y = game_state.get_agent_position()
+    field_prepared = game_state.get_field()
+    #Calculate positions on the field affected by bombs
+    bomb_position = []
+    for (bomb,_) in game_state.get_bombs_position():
+        bomb_position.append(game_state.get_bomb_explosion_squares(bomb))
+    flattened_list = [item for sublist in bomb_position for item in sublist]
+    bomb_position_array = np.array(flattened_list)
+    bomb_position = np.unique(bomb_position_array,axis=0)
+
+    #Positions affected by bombs marked with -2
+    for coordinate in bomb_position:
+        x = coordinate[0]
+        y = coordinate[1]
+        field_prepared[x][y] = -2
+
+    #Positions with coins marked with 4
+    coins = game_state.get_coins()
+    for coin in coins:
+        x = coin[0]
+        y = coin[1]
+        field_prepared[x][y] = 4
+
+    #Mark enemy agent positions with 3
+    other_agents = game_state.get_other_agents_position()
+    for other_agent in other_agents:
+        x = other_agent[3][0]
+        y = other_agent[3][1]
+        field_prepared[x][y] = 3
+
+    x = x+2
+    y = y+2
+    padded_array = np.pad(field_prepared, 2, mode='constant', constant_values=-1)
+    croped_array = padded_array[x-3:x+4, y-3:y+4]
+    croped_array = np.transpose(croped_array)
+
+    #5 decodes agents position
+    croped_array[3][3]=5
+    #Mark all positions unaccessibale for the player with -1 except of crates (1)
+    croped_array = calculate_accessible_parts(croped_array)
+
+    return croped_array
+
+
+
+
+def explore_field(field, x, y, explored):
+    if x < 0 or y < 0 or x >= field.shape[0] or y >= field.shape[1] or field[x, y] in [-1, 1, 3]:
+        return
+    
+    if (x, y) not in explored:
+        explored.append((x, y))
+    
+        for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+            explore_field(field, x + dx, y + dy, explored)
+
+def calculate_accessible_parts(field):
+    # Copy the field to avoid modifying the original array
+    result_field = field.copy()
+    
+    # List to keep track of explored fields
+    explored = []
+    
+    # Perform DFS to explore accessible parts
+    explore_field(result_field, 3, 3, explored)  # Assuming the starting position is (3, 3)
+    
+    # Mark unexplored fields as -1
+    for i in range(result_field.shape[0]):
+        for j in range(result_field.shape[1]):
+            if (i, j) not in explored and field[i][j]!=1:
+                result_field[i, j] = -1
+    
+    return result_field
+
+
 class NumpyEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.ndarray):
