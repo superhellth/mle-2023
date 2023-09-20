@@ -11,6 +11,10 @@ from .state import GameState
 from collections import defaultdict
 import math
 
+NEW_FIELD_VISITED = "NEW_FIELD_VISITED"
+OPPONENT_IN_DANGER_AND_PLACED_BOMB = "OPPONENT_IN_DANGER_AND_PLACED_BOMB"
+OPPONENT_CANT_SURVIVE_AND_PLACED_BOMB = "OPPONENT_CANT_SURVIVE_AND_PLACED_BOMB"
+
 def setup_training(self):
     """
     Initialise self for training purpose.
@@ -23,6 +27,7 @@ def setup_training(self):
     if not os.path.exists(self.TRAINING_DATA_DIRECTORY):
         os.mkdir(self.TRAINING_DATA_DIRECTORY)
 
+    self.DIMENSIONS_MAP = (17,17)
     self.EPSILON = 1.0
     self.STEP_DISCOUNT = 0.3
     self.LEARNING_RATE = 0.1
@@ -33,6 +38,7 @@ def setup_training(self):
     self.current_game_hashes = set()
     self.logger.info("Finished Training Setup")
     self.previous_agent_position = None
+    self.already_visited = np.zeros(self.DIMENSIONS_MAP)
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
@@ -54,8 +60,19 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     """
     the_old_game_state = GameState(old_game_state)
     the_new_game_state = GameState(new_game_state)
+    the_old_game_state_feature = the_old_game_state.to_features()
+    the_new_game_state_feature = the_old_game_state.to_features()
+
     old_game_state_hash = the_old_game_state.to_hashed_features()
     new_game_state_hash = the_new_game_state.to_hashed_features()
+    if self.already_visited[the_new_game_state.get_agent_position()] == 0:
+        #print("ALREADY THERE")
+        events.append(NEW_FIELD_VISITED)
+        self.already_visited[the_new_game_state.get_agent_position()] == 1
+    if type(the_old_game_state_feature) != int and the_old_game_state_feature["closest_agent_is_in_danger"]==True and self_action=="BOMB":
+        events.append(OPPONENT_IN_DANGER_AND_PLACED_BOMB)
+    if type(the_old_game_state_feature) != int and the_old_game_state_feature["closest_agent_cant_survive"]==True and self_action=="BOMB":
+        events.append(OPPONENT_CANT_SURVIVE_AND_PLACED_BOMB)
     if old_game_state_hash == new_game_state_hash:
         events.append("REPEATED GAMESTATE")
     self.current_game_hashes.add(old_game_state_hash) 
@@ -128,6 +145,10 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
                                                               n - 1]["new_game_state"]
             # + reward_from_events(self, events)
             reward = auxilliary_rewards(game_state_before, game_state_after, print_components=print_components) # + reward_from_events(self, events)
+            
+            #Add rewards from events
+            reward += reward_from_events(self,events)
+
             if n > 1 and final_state.get_potential() > 0:
                 v = max([self.prev_Q[(final_state.to_hashed_features(), a)]
                         for a in final_state.get_possible_moves()])
@@ -169,7 +190,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         print(f"Learning rate: {self.LEARNING_RATE}")
         with open(self.TRAINING_DATA_DIRECTORY + "q.json", "w", encoding="utf-8") as f:
             f.write(ujson.dumps(self.Q))
-
+    self.already_visited = np.zeros(self.DIMENSIONS_MAP)
 
 def sample_training_data(self, size=400):
     """Create a random subsample of the experience buffer for training.
@@ -221,8 +242,17 @@ def reward_from_events(self, events: List[str]) -> int:
     certain behavior.
     """
     game_rewards = {
-        e.KILLED_SELF: -20
+        e.KILLED_SELF: -30,
+        NEW_FIELD_VISITED: 10,
+        e.KILLED_OPPONENT:19,
+        OPPONENT_IN_DANGER_AND_PLACED_BOMB:15,
+        OPPONENT_CANT_SURVIVE_AND_PLACED_BOMB:25
     }
+
+    """e.MOVED_UP:-.001,
+        e.MOVED_LEFT:-.001,
+        e.MOVED_RIGHT:-.001,
+        e.MOVED_DOWN:-.001,"""
     reward_sum = 0
     for event in events:
         if event in game_rewards:

@@ -58,7 +58,6 @@ def act(self, game_state: dict) -> str:
     # if game_state.to_features() == -1:
     #     print("DEAD")
     # else:
-    #     print("ALIVE")
     if self.train and random.random() < self.EPSILON:
         return np.random.choice(game_state.get_possible_moves())
     hashed_gamestate = game_state.to_hashed_features()
@@ -139,45 +138,49 @@ def cropSevenTiles(game_state):
     y = y+2
     padded_array = np.pad(field_prepared, 2, mode='constant', constant_values=-1)
     croped_array = padded_array[x-3:x+4, y-3:y+4]
-    croped_array = np.transpose(croped_array)
+    #croped_array = np.transpose(croped_array)
 
     #5 decodes agents position
     croped_array[3][3]=5
     #Mark all positions unaccessibale for the player with -1 except of crates (1)
-    croped_array = calculate_accessible_parts(croped_array)
+    croped_array,other_agent = calculate_accessible_parts(croped_array)
+    print(croped_array,other_agent)
 
-    return croped_array
+    return croped_array,other_agent
 
 
 
 
-def explore_field(field, x, y, explored):
+def explore_field(field, x, y, explored,other_agent):
     if x < 0 or y < 0 or x >= field.shape[0] or y >= field.shape[1] or field[x, y] in [-1, 1, 3]:
         return
     
     if (x, y) not in explored:
         explored.append((x, y))
+        if field[x][y] == 3:
+            other_agent.append((x,y))
     
         for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-            explore_field(field, x + dx, y + dy, explored)
+            explore_field(field, x + dx, y + dy, explored,other_agent)
 
 def calculate_accessible_parts(field):
     # Copy the field to avoid modifying the original array
     result_field = field.copy()
     
-    # List to keep track of explored fields
+    # List to keep track of explored fields and if other agent was found
     explored = []
+    other_agent = []
     
     # Perform DFS to explore accessible parts
-    explore_field(result_field, 3, 3, explored)  # Assuming the starting position is (3, 3)
+    explore_field(result_field, 3, 3, explored,other_agent)  # Assuming the starting position is (3, 3)
     
     # Mark unexplored fields as -1
     for i in range(result_field.shape[0]):
         for j in range(result_field.shape[1]):
-            if (i, j) not in explored and field[i][j]!=1:
+            if (i, j) not in explored and field[i][j]!=1 and field[i][j]!=3:
                 result_field[i, j] = -1
     
-    return result_field
+    return result_field,other_agent
 
 
 class NumpyEncoder(json.JSONEncoder):
