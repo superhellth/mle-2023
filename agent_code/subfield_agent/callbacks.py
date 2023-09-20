@@ -129,10 +129,43 @@ def cropSevenTiles(game_state):
     #5 decodes agents position
     croped_array[3][3]=5
     #print(game_state.get_bombs_position())
-    print("############")
+    print("Array with DFS")
+    print(calculate_accessible_parts(croped_array))
     print("'''''''''''''''")
-    print("MMMMMMMMMM")
+    print("Array without DFS")
     print(croped_array)
 
     return croped_array
+
+
+
+
+def explore_field(field, x, y, explored):
+    if x < 0 or y < 0 or x >= field.shape[0] or y >= field.shape[1] or field[x, y] in [-1, 1, 3]:
+        return
+    
+    if (x, y) not in explored:
+        explored.append((x, y))
+    
+        for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+            explore_field(field, x + dx, y + dy, explored)
+
+def calculate_accessible_parts(field):
+    # Copy the field to avoid modifying the original array
+    result_field = field.copy()
+    
+    # List to keep track of explored fields
+    explored = []
+    
+    # Perform DFS to explore accessible parts
+    explore_field(result_field, 3, 3, explored)  # Assuming the starting position is (3, 3)
+    
+    # Mark unexplored fields as -1
+    for i in range(result_field.shape[0]):
+        for j in range(result_field.shape[1]):
+            if (i, j) not in explored and field[i][j]!=1:
+                result_field[i, j] = -1
+    
+    return result_field
+
 
