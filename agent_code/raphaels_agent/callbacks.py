@@ -31,6 +31,7 @@ def setup(self):
 def act(self,game_state : dict):
     game_state = GameState(game_state)
     agent_position = game_state.get_agent_position()
+    x=cropSevenTiles(game_state)
     self.logger.info("Random Q Table model Act.")
     """if not self.train and np.random.random(1) > self.EPSILON:
         action = np.random.choice(self.ACTIONS, p=[0.225, 0.225, 0.225, 0.225, 0.05, 0.05])
@@ -45,10 +46,10 @@ def act(self,game_state : dict):
         action_id = np.argmax(slice)
         subfield=get_9x9_submatrix(game_state.get_field(),agent_position)
         #print(game_state.get_field(),game_state.get_coins_position())
-        test = state_to_features(game_state)
+        #test = state_to_features(game_state)
         #print(test)
         #print(agent_position)
-        action = self.ACTIONS[action_id]
+        action = self.ACTIONS[4]
         if action == "BOMB":
             print("BOMB")
         #print("Not Random: "+action)
@@ -232,3 +233,27 @@ def save_moves(field, position, bombs, impossible_moves, actions):
 
     return possible_moves
 
+def cropSevenTiles(game_state):
+    '''
+    This function crops the 17x17 field into a 7x7 with the player centered , i.e. the surrounding matrix.
+    This will preprocessed further before used as a state in Q-Learning.
+    '''
+    x,y = game_state.get_agent_position()
+    field = game_state.get_field()
+
+    x = x+2
+    y = y+2
+    padded_array = np.pad(field, 2, mode='constant', constant_values=-1)
+    croped_array = padded_array[x-3:x+4, y-3:y+4]
+    croped_array = np.transpose(croped_array)
+
+    #5 decodes agents position
+    croped_array[3][3]=5
+    print(game_state.get_bombs_position())
+    print("############")
+    print(game_state.explosion_map())
+    print("'''''''''''''''")
+    print(game_state.get_coins())
+    print("MMMMMMMMMM")
+
+    return padded_array
