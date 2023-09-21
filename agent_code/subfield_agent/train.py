@@ -65,7 +65,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
     old_game_state_hash = the_old_game_state.to_hashed_features()
     new_game_state_hash = the_new_game_state.to_hashed_features()
-    if self.already_visited[the_new_game_state.get_agent_position()] == 0:
+    self.already_visited[the_old_game_state.get_agent_position()] = 1
+    if self.already_visited[the_new_game_state.get_agent_position()] == 0 and self_action != "WAITED":
         #print("ALREADY THERE")
         events.append(NEW_FIELD_VISITED)
         self.already_visited[the_new_game_state.get_agent_position()] == 1
@@ -147,8 +148,10 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
             reward = auxilliary_rewards(game_state_before, game_state_after, print_components=print_components) # + reward_from_events(self, events)
             
             #Add rewards from events
-            reward += reward_from_events(self,events)
-
+            #ToDo
+            #Falsch, auf Events im Experience Buffer zugreifen
+            reward += reward_from_events(self,self.experience_buffer[game_number][future_step]["events"])
+            print(self.experience_buffer[game_number][future_step]["events"])
             if n > 1 and final_state.get_potential() > 0:
                 v = max([self.prev_Q[(final_state.to_hashed_features(), a)]
                         for a in final_state.get_possible_moves()])
@@ -243,10 +246,11 @@ def reward_from_events(self, events: List[str]) -> int:
     """
     game_rewards = {
         e.KILLED_SELF: -30,
-        NEW_FIELD_VISITED: 10,
+        NEW_FIELD_VISITED: 0,
         e.KILLED_OPPONENT:19,
         OPPONENT_IN_DANGER_AND_PLACED_BOMB:15,
-        OPPONENT_CANT_SURVIVE_AND_PLACED_BOMB:25
+        OPPONENT_CANT_SURVIVE_AND_PLACED_BOMB:25,
+        e.WAITED:-50
     }
 
     """e.MOVED_UP:-.001,

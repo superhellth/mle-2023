@@ -241,16 +241,6 @@ class GameState:
         #     # mirror agent position
         #     feature_agent_position[0], feature_agent_position[1] = feature_agent_position[1], feature_agent_position[0]
 
-        # rotate coins and bombs and filter out closest one
-        feature_coins = [np.array(self.adjust_position(
-            [coin[0], coin[1]])) for coin in self.coins]
-        nearest_coins = sorted(feature_coins, key=lambda x: self.get_rockless_distance(
-            x, feature_agent_position))
-        feature_bombs = [[np.array(self.adjust_position(
-            [bomb[0][0], bomb[0][1]])), bomb[1]] for bomb in self.bombs]
-        nearest_bombs = sorted(feature_bombs, key=lambda x: self.get_rockless_distance(
-            x[0], feature_agent_position))
-
         # if the game state is not surviveable, the features do not matter
         if self.dead or not self.can_agent_survive():
             return -1
@@ -481,7 +471,7 @@ class GameState:
             if game_state_feature["other_agent_in_subfield"] == True:
                 closest_agent,distance_to_enemy = game_state_feature["closest_agent"]
             else:
-                closest_agent,distance_to_enemy = (),34 #Maximum possible distance
+                closest_agent,distance_to_enemy = (),3 #Maximum possible distance
             crate_potential = 0
             for bomb in self.bombs:
                 affected_tiles = self.get_bomb_explosion_squares(bomb[0])
@@ -502,7 +492,7 @@ class GameState:
             else:
                 bomb_near_opponent = 0
 
-            #Encourage brinign opponenet in unsurvivable positions:
+            #Encourage brining opponenet in unsurvivable positions:
             if game_state_feature["closest_agent_cant_survive"] == True:
                 opponent_cant_survive = 1
             else:
@@ -515,7 +505,7 @@ class GameState:
                 print(f"Danger penalty: {danger_penalty}")
                 print(f"Number of crates: {n_crates}")
                 print(f"Crate potential: {crate_potential}")
-            return 30 * (self.agent_score) + self.get_closest_bomb_distance()-5*distance_to_enemy + 1*bomb_near_opponent +3*opponent_cant_survive - 5 * danger_penalty - 9 * n_crates + 6 * crate_potential
+            return 30 * (self.agent_score) + self.get_closest_bomb_distance()-3*distance_to_enemy + 2*bomb_near_opponent +9*opponent_cant_survive - 5 * danger_penalty
         else:
             return -1000000
 
