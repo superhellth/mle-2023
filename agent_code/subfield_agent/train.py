@@ -14,6 +14,9 @@ import math
 NEW_FIELD_VISITED = "NEW_FIELD_VISITED"
 OPPONENT_IN_DANGER_AND_PLACED_BOMB = "OPPONENT_IN_DANGER_AND_PLACED_BOMB"
 OPPONENT_CANT_SURVIVE_AND_PLACED_BOMB = "OPPONENT_CANT_SURVIVE_AND_PLACED_BOMB"
+KILLED_BY_WAITING = "KILLED_BY_WAITING"
+KILLED_BY_OWN_BOMB = "KILLED_BY_OWN_BOMB"
+TOTALLY_NEW_FIELD = "TOTALLY_NEW_FIELD"
 
 def setup_training(self):
     """
@@ -39,6 +42,7 @@ def setup_training(self):
     self.logger.info("Finished Training Setup")
     self.previous_agent_position = None
     self.already_visited = np.zeros(self.DIMENSIONS_MAP)
+    self.total_visited = np.zeros(self.DIMENSIONS_MAP)
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
@@ -66,16 +70,22 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     old_game_state_hash = the_old_game_state.to_hashed_features()
     new_game_state_hash = the_new_game_state.to_hashed_features()
     self.already_visited[the_old_game_state.get_agent_position()] = 1
-    if self.already_visited[the_new_game_state.get_agent_position()] == 0 and self_action != "WAITED":
-        #print("ALREADY THERE")
+    """if self.already_visited[the_new_game_state.get_agent_position()] == 0 and self_action != "WAITED":
+        print("New Field")
         events.append(NEW_FIELD_VISITED)
         self.already_visited[the_new_game_state.get_agent_position()] == 1
+        if self.total_visited[the_new_game_state.get_agent_position()] == 0:
+            events.append(TOTALLY_NEW_FIELD)
     if type(the_old_game_state_feature) != int and the_old_game_state_feature["closest_agent_is_in_danger"]==True and self_action=="BOMB":
         events.append(OPPONENT_IN_DANGER_AND_PLACED_BOMB)
+        print("Closest agent in danger")
     if type(the_old_game_state_feature) != int and the_old_game_state_feature["closest_agent_cant_survive"]==True and self_action=="BOMB":
         events.append(OPPONENT_CANT_SURVIVE_AND_PLACED_BOMB)
+        print("Cant Surive")"""
     if old_game_state_hash == new_game_state_hash:
         events.append("REPEATED GAMESTATE")
+    #print("Events in Action")
+    #print(events)
     self.current_game_hashes.add(old_game_state_hash) 
     self.current_game_list.append({"old_game_state": the_old_game_state, "new_game_state": the_new_game_state,
                                   "action": the_old_game_state.adjust_movement(self_action), "events": events})
@@ -121,15 +131,26 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         # print(other_state.to_features())
         # print(other_state.agent_position)
         killed_by_waiting = False
+        killed_by_own_bomb = False
         for future_step in range(step_number + 1, step_number + n + 1):
             game_state_before = self.experience_buffer[game_number][future_step -
                                                                     1]["old_game_state"]
             game_state_after = self.experience_buffer[game_number][future_step]["old_game_state"]
+
+            game_state_before_feature = game_state_before.to_features()
+            game_state_after_feature = game_state_after.to_features()
             print_components = False
+            events_for_rewards = self.experience_buffer[game_number][future_step]["events"]
 
             if future_step == step_number + 1 and current_action == "WAIT" and not game_state_after.can_agent_survive():
                 killed_by_waiting = True
+                #print("KILLED_BY_WAITING")
+                events_for_rewards.append(KILLED_BY_WAITING)
 
+            if future_step == step_number + 1 and current_action == "BOMB" and not game_state_after.can_agent_survive():
+                killed_by_own_bomb = True
+                #print("KILLED_BY_OWN_BOMB")
+                events_for_rewards.append(KILLED_BY_OWN_BOMB)
             # if current_action == "WAIT":
             #     print_components = True
 
@@ -145,13 +166,28 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
             final_state = self.experience_buffer[game_number][step_number +
                                                               n - 1]["new_game_state"]
             # + reward_from_events(self, events)
-            reward = auxilliary_rewards(game_state_before, game_state_after, print_components=print_components) # + reward_from_events(self, events)
-            
+
+            reward = auxilliary_rewards(game_state_before, game_state_after, print_components=print_components)
+                #print(current_action) # + reward_from_events(self, events)
+            #reward = 10
             #Add rewards from events
             #ToDo
             #Falsch, auf Events im Experience Buffer zugreifen
-            reward += reward_from_events(self,self.experience_buffer[game_number][future_step]["events"])
-            print(self.experience_buffer[game_number][future_step]["events"])
+            #print("Reward")
+
+            if self.already_visited[game_state_after.get_agent_position()] == 0:
+                events_for_rewards.append(NEW_FIELD_VISITED)
+                self.already_visited[game_state_after.get_agent_position()] == 1
+                if self.total_visited[game_state_after.get_agent_position()] == 0:
+                    events.append(TOTALLY_NEW_FIELD)
+            if game_state_before_feature["closest_agent_is_in_danger"]==True and current_action=="BOMB":
+                events_for_rewards.append(OPPONENT_IN_DANGER_AND_PLACED_BOMB)
+                print("Closest agent in danger")
+            if game_state_before_feature["closest_agent_cant_survive"]==True and current_action=="BOMB":
+                events_for_rewards.append(OPPONENT_CANT_SURVIVE_AND_PLACED_BOMB)
+                print("Cant Surive")
+
+            reward += reward_from_events(self,events_for_rewards)
             if n > 1 and final_state.get_potential() > 0:
                 v = max([self.prev_Q[(final_state.to_hashed_features(), a)]
                         for a in final_state.get_possible_moves()])
@@ -191,8 +227,10 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         print(f"Size of experience buffer in memory: {sys.getsizeof(self.experience_buffer)}")
         print(f"Epsilon: {self.EPSILON}")
         print(f"Learning rate: {self.LEARNING_RATE}")
+        print(self.total_visited)
         with open(self.TRAINING_DATA_DIRECTORY + "q.json", "w", encoding="utf-8") as f:
             f.write(ujson.dumps(self.Q))
+    self.total_visited = np.logical_or(self.total_visited, self.already_visited).astype(int)
     self.already_visited = np.zeros(self.DIMENSIONS_MAP)
 
 def sample_training_data(self, size=400):
@@ -234,6 +272,7 @@ def auxilliary_rewards(old_game_state: GameState, new_game_state: GameState, pri
     # print("New game state:")
     pot1 = new_game_state.get_potential(print_components=print_components)
     # print(f"New game state potential: {pot1}")
+    #print(f" Old Pot {pot0} New Pot: {pot1} Aux. Reward: {pot1 - pot0}")
     return pot1 - pot0
 
 
@@ -246,13 +285,16 @@ def reward_from_events(self, events: List[str]) -> int:
     """
     game_rewards = {
         e.KILLED_SELF: -30,
-        NEW_FIELD_VISITED: 0,
-        e.KILLED_OPPONENT:19,
+        NEW_FIELD_VISITED: 50,
+        e.KILLED_OPPONENT:29,
         OPPONENT_IN_DANGER_AND_PLACED_BOMB:15,
         OPPONENT_CANT_SURVIVE_AND_PLACED_BOMB:25,
-        e.WAITED:-50
+        e.WAITED:-50,
+        TOTALLY_NEW_FIELD:100,
+        KILLED_BY_OWN_BOMB:-50,
+        KILLED_BY_WAITING:-40
     }
-
+    #print(events)
     """e.MOVED_UP:-.001,
         e.MOVED_LEFT:-.001,
         e.MOVED_RIGHT:-.001,

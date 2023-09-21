@@ -52,6 +52,7 @@ def act(self, game_state: dict) -> str:
     :return: The action to take as a string.
     """
     game_state = GameState(game_state)
+    #print(game_state.can_agent_survive())
     # print(f"Game state is surviveable: {game_state.can_agent_survive()}")
     # print(game_state.agent_position)
     # print(game_state.explosion_map)
@@ -83,6 +84,7 @@ def act(self, game_state: dict) -> str:
             # print(game_state.to_features())
         # print(action_values)
         return np.random.choice(possible_moves)
+        #return "RIGHT"
     elif not self.train:
         pass
         # print(action_values)
@@ -97,6 +99,7 @@ def act(self, game_state: dict) -> str:
             f.write(ujson.dumps(self.hash_to_action_values))
 
     return chosen_action
+    #return "RIGHT"
 
 
 def cropSevenTiles(game_state):

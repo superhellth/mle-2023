@@ -459,9 +459,11 @@ class GameState:
         """
         game_state_feature = self.to_features()
         if self.dead:
+            #print("State: Agent dead")
             return -1000000
         
         if self.can_agent_survive():
+            #print("State: Agent acts")
             # discourage going near bombs
             if self.is_agent_in_danger:
                 danger_penalty = 1
@@ -471,7 +473,7 @@ class GameState:
             if game_state_feature["other_agent_in_subfield"] == True:
                 closest_agent,distance_to_enemy = game_state_feature["closest_agent"]
             else:
-                closest_agent,distance_to_enemy = (),3 #Maximum possible distance
+                closest_agent,distance_to_enemy = (),7 #Maximum possible distance
             crate_potential = 0
             for bomb in self.bombs:
                 affected_tiles = self.get_bomb_explosion_squares(bomb[0])
@@ -503,10 +505,12 @@ class GameState:
                 #print(f"Closest coin distance: {self.get_closest_coin_distance()}")
                 print(f"Closest bomb distance: {self.get_closest_bomb_distance()}")
                 print(f"Danger penalty: {danger_penalty}")
-                print(f"Number of crates: {n_crates}")
-                print(f"Crate potential: {crate_potential}")
-            return 30 * (self.agent_score) + self.get_closest_bomb_distance()-3*distance_to_enemy + 2*bomb_near_opponent +9*opponent_cant_survive - 5 * danger_penalty
+                print(f"Distance to enemy: {distance_to_enemy}")
+                print(f"Bomb near opponent: {bomb_near_opponent}")
+                print(f"Oponenet cant survive: {opponent_cant_survive}")
+            return 30 * (self.agent_score) + self.get_closest_bomb_distance()-15*distance_to_enemy + 3*bomb_near_opponent +4*opponent_cant_survive - 10 * danger_penalty
         else:
+            #print("State: Cant surivive")
             return -1000000
 
     def get_closest_coin_distance(self, k=0):
