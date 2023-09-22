@@ -4,12 +4,9 @@ import ujson
 from typing import List
 import numpy as np
 from random import shuffle
-import random
 import events as e
-import settings
 from .state import GameState
 from collections import defaultdict
-import math
 
 def setup_training(self):
     """
