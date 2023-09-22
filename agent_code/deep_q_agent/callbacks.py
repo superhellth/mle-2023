@@ -1,9 +1,5 @@
-import os
-import ujson
-import json
-import random
+import torch
 from .state import GameState
-from collections import defaultdict
 
 import numpy as np
 
@@ -25,21 +21,9 @@ def setup(self):
     self.logger.info("Agent setup")
     self.ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
     self.TRAINING_DATA_DIRECTORY = "./training_data/"
-    if self.train or not os.path.isfile(self.TRAINING_DATA_DIRECTORY + "q.json"):
-        self.logger.info("Setting up model from scratch.")
-    else:
-        self.logger.info("Loading model from saved state.")
-        with open(self.TRAINING_DATA_DIRECTORY + "q.json", "rb") as file:
-            self.Q = defaultdict(float)
-            loaded_dict = ujson.loads(file.read())
-            for key in loaded_dict:
-                splits = key[1:-1].split(", ")
-                hash = int(splits[0])
-                action = splits[1][1:-1]
-                self.Q[(hash, action)] = loaded_dict[key]
-    if not self.train:
-        self.hash_to_features = dict()
-        self.hash_to_action_values = dict()
+    self.logger.info("Loading model from saved state.")
+    self.model = torch.load(self.TRAINING_DATA_DIRECTORY + "model.pt")
+    self.model.eval()
 
 
 def act(self, game_state: dict) -> str:
