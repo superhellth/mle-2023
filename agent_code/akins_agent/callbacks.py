@@ -1,10 +1,11 @@
 import os
 import pickle
 import random
+import json
 
 import numpy as np
 
-ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT']  # ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
+ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT','WAIT']  # ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
 
 def setup(self):
@@ -21,7 +22,20 @@ def setup(self):
 
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
-    print("Setting up.")
+    print("Setting up Q-Table.")
+
+
+    training_folder_name = "Training"
+    qtable_file_name = "qtable.pkl"
+    file_path = os.path.join(training_folder_name, qtable_file_name)
+
+    if os.path.exists(file_path): #Model from scratch if no model exists or train mode.
+        with open(file_path, "rb") as file:
+           self.qtable = pickle.load(file) # Load from model, in act() we just check if (state,*) is available and look for the according action in the table.
+    else:
+        self.qtable = {} #If empty we need to train from scratch
+
+
     if self.train or not os.path.isfile("my-saved-model.pt"):
         self.logger.info("Setting up model from scratch.")
         weights = np.random.rand(len(ACTIONS))
@@ -49,22 +63,23 @@ def act(self, game_state: dict) -> str:
     field = game_state['field']
     x = game_state['self'][3][0]  # player_x_coordinate
     y = game_state['self'][3][1]  # player_y_coordinate
-    possible_actions = []
-    invalid_actions = []
-    if field[x - 1][y] == -1:
-        invalid_actions.append("LEFT")
-    if field[x + 1][y] == -1:
-        invalid_actions.append("RIGHT")
-    if field[x][y - 1] == -1:
-        invalid_actions.append("UP")
-    if field[x][y + 1] == -1:
-        invalid_actions.append("DOWN")
-    for actions in ACTIONS:
-        if actions not in invalid_actions:
-            possible_actions.append(actions)
-    for coin in game_state['coins']:
-        field[coin[0]][coin[1]] = 2
+    bomb_boolean = game_state['self'][2] #if bomb is ticking or not
 
+    def coinsToField(coins,field):
+        for coin in coins:
+            field[coin[0]][coin[1]] = 2
+    coinsToField(game_state['coins'],field)
+    def opponentToField(others,field):
+        for opponent in others:
+            (opponent_x,opponent_y) = opponent[3]
+            field[opponent_x][opponent_y]=3
+    opponentToField(game_state['others'],field)
+    def bombToField(bombs,field): #Explosion Map missing
+        for bomb in bombs:
+            (bomb_x,bomb_y) = bomb[0]
+            timer = bomb[1]
+            field[bomb_x][bomb_y]=4+timer
+    bombToField(game_state['bombs'],field)
     def kuerzesterWegZumTile(x, y, field, tile_value):
         '''This function searches the closest path to a coin given the agents coordinates (x,y) and the field of the current gamestate and the value of the tile that should be found.
         For coins it is the value 2.'''
@@ -110,7 +125,48 @@ def act(self, game_state: dict) -> str:
                 return False  # "Keine Lösung"
 
         return breitenSuche([(x, y, [])])
+    def naherTile(x, y, field, tile_value):
+        '''This function returns the coordinates of closest Tile with the value tile_value'''
+        visitedCoordinates = []
+        field_length = len(field[0])  # We can deduct the length from variable field, in ths case 17
+        # rufe auf mit Argument ((x,y,[],[]) X,Y Koordinaten [] aktuell mitgeführter Weg [] schon besuche Koordinaten
+        def breitenSuche(coordinates):  # currentPath = ['LEFT', 'DOWN', 'LEFT']
+            newCoordinates = []  # Neue Knoten mit der letzten Schrittrichtung mitgeführt
+            for coordinate in coordinates:
+                x = coordinate[0]
+                y = coordinate[1]
+                # Terminieren wenn Coin gefunden
+                if x - 1 >= 0 and field[x - 1][y] == tile_value:
+                    return (x-1,y)
+                elif x + 1 < field_length and field[x + 1][y] == tile_value:
+                    return (x+1,y)
+                elif y - 1 >= 0 and field[x][y - 1] == tile_value:
+                    return (x,y-1)
+                elif y + 1 < field_length and field[x][y + 1] == tile_value:
+                    return (x,y+1)
+                # Wir wollen für jeden Knoten/Koordinate den Nachfolger durchsuchen (also die nächste Ebene durchkämmen
+                if x - 1 >= 0:  # Prüfe ob wir den Rand noch nicht erreicht haben
+                    if field[x - 1][y] != -1 and field[x - 1][y] != 1 and (x - 1,y) not in visitedCoordinates:  # Prüfe ob es ein legaler Pfad ist und ob wir den schon besucht haben
+                        newCoordinates.append((x - 1, y))  # Legitimer Nachfolgeknoten von den wir aus weiter expandieren können
+                        visitedCoordinates.append((x - 1, y))
+                if x + 1 < field_length:
+                    if field[x + 1][y] != -1 and field[x + 1][y] != 1 and (x + 1, y) not in visitedCoordinates:
+                        newCoordinates.append((x + 1, y))
+                        visitedCoordinates.append((x + 1, y))
+                if y - 1 >= 0:
+                    if field[x][y - 1] != -1 and field[x][y - 1] != 1 and (x, y - 1) not in visitedCoordinates:
+                        newCoordinates.append((x, y - 1))
+                        visitedCoordinates.append((x, y - 1))
+                if y + 1 < field_length:
+                    if field[x][y + 1] != -1 and field[x][y + 1] != 1 and (x, y + 1) not in visitedCoordinates:
+                        newCoordinates.append((x, y + 1))
+                        visitedCoordinates.append((x, y + 1))
+            if len(newCoordinates) > 0:
+                return breitenSuche(newCoordinates)
+            else:
+                return False  # "Keine Lösung"
 
+        return breitenSuche([(x, y, [])])
     # print(kuerzesterWegZumTile(x,y,game_state['field'],2))
 
     def cropSevenTiles(x, y, field):
@@ -159,27 +215,98 @@ def act(self, game_state: dict) -> str:
             for tile_y in range(crop_length):
                 if not checkLineOfSight(tile_x,tile_y,3,3,crop):
                     crop[tile_x][tile_y] = 0
-        return crop
-    #print(checkLineOfSight(0, 0, 3, 3,crop))  #schaut beispielsweise, ob im Field eine freie Sicht gibt von Spielerkoordinate und dem Tile drei über ihn.
 
-    print("\nPre: ")
-    for element in crop:
-        print(element)
-    reduceInformation(crop)
-    print("\nPost: ")
-    for element in crop:
-        print(element)
+    def keepOneCoin(crop):
+        crop_length = len(crop[0])
+        closest_coin = naherTile(3, 3, crop, 2)
+        for tile_x in range(crop_length):  # Wir schauen alle Tiles an, ob eine Verbindung zum Spieler gibt. Wenn nicht => unnötige Information
+            for tile_y in range(crop_length):
+                if crop[tile_x][tile_y]==2:
+                    crop[tile_x][tile_y] = 0
+        if closest_coin:
+            (closest_coin_x,closest_coin_y)=closest_coin
+            crop[closest_coin_x][closest_coin_y] = 2
+
+    keepOneCoin(crop)
+    def keepOneEnemy(crop):
+        crop_length = len(crop[0])
+        closest_coin = naherTile(3, 3, crop, 3)
+        for tile_x in range(crop_length):  # Wir schauen alle Tiles an, ob eine Verbindung zum Spieler gibt. Wenn nicht => unnötige Information
+            for tile_y in range(crop_length):
+                if crop[tile_x][tile_y] == 3:
+                    crop[tile_x][tile_y] = 0
+        if closest_coin:
+            (closest_coin_x, closest_coin_y) = closest_coin
+            crop[closest_coin_x][closest_coin_y] = 3
+    keepOneEnemy(crop)
+    #for element in crop:
+    #   print(element)
+    '''TODOS:
+    WITHIN THE GAME_STATE:
+    MOVE ALL PLAYERS INTO THE GAME_STATE FIELD check
+    MOVE ALL BOMBS INTO THE GAME_STATE FIELD check
+    
+    WITHIN THE CROP:
+    LEAVE ONLY THE CLOSEST COIN ON MAP check
+    LEAVE ONLY ONE ENEMY IN THE CROP check
+    
+    Whats missing?:
+    Move explosion counter into subfield
+    '''
     # Introduce some randomness in training mode with small probabiliy 10%
-    random_prob = .1
-    if self.train and random.random() < random_prob:
+
+
+    self.logger.debug("Querying model for action.")
+
+
+    def filterInvalidActions(x, y, bomb_boolean, actions): #You cannot walk into opponents , you cannot walk into bombs, walls and crates
+        '''This function filters invalid moves. Make sure this is executed after bomb,player information is inserted into the field.
+        And make sure that field is not touched anymore (e.g. do not remove player information again for optimization reasons). You can modify crop as you wish.'''
+        invalid_actions = []
+        possible_actions = []
+        if field[x - 1][y] in [-1,1,3,4,5,6,7]:
+            invalid_actions.append("LEFT")
+        if field[x + 1][y] in [-1,1,3,4,5,6,7]:
+            invalid_actions.append("RIGHT")
+        if field[x][y - 1] in [-1,1,3,4,5,6,7]:
+            invalid_actions.append("UP")
+        if field[x][y + 1] in [-1,1,3,4,5,6,7]:
+            invalid_actions.append("DOWN")
+        if not bomb_boolean:
+            invalid_actions.append("BOMB")
+        for action in actions:
+            if action not in invalid_actions:
+                possible_actions.append(action)
+        return possible_actions
+    possible_actions = filterInvalidActions(x, y, bomb_boolean, ACTIONS)
+
+    random_prob = .2
+    if random.random() < random_prob:#if self.train and random.random() < random_prob:
         self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb.
         return np.random.choice(possible_actions)  # second argument p=[.2, .2, .2, .2, .1, .1]
 
-    self.logger.debug("Querying model for action.")
-    return "WAIT"
-    # return np.random.choice(possible_actions)
 
+    state =  tuple(tuple(row) for row in crop) #We gotta make state hashable i.e by turning it into a tuple to use it as key in dictionary
+    best_action = None
+    best_qvalue = float('-inf')
+
+    final_action = None
+    if not self.train:
+        for action in possible_actions:
+            qvalue = self.qtable.get((state,action),float('-inf'))
+            if qvalue > best_qvalue:
+                best_action = action
+                best_qvalue = qvalue
+    if best_qvalue != float('-inf'):
+        print("State was available in the Q-Table.")
+    else:
+        print("Sad")
+    if best_qvalue == float('-inf'): #Sadly no entry found in qtable
+        best_action = random.choice(possible_actions)
+    #for element in crop:
+    #    print(element)
+    return best_action
 
 def state_to_features(game_state: dict) -> np.array:
     """
