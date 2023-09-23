@@ -192,7 +192,7 @@ class GameState:
         # + 0.01 * (abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1]))
         return dx + dy
 
-    def to_features(self):
+    def to_features_subfield(self):
         """Convert game state to more generic feature vector.
 
         Returns:
@@ -211,6 +211,10 @@ class GameState:
         feature_prec_explosion_map = self.prec_explosion_map
         feature_agent_position = np.array(
             [self.agent_position[0], self.agent_position[1]])
+        feature_bombs = [[np.array(self.adjust_position(
+            [bomb[0][0], bomb[0][1]])), bomb[1]] for bomb in self.bombs]
+        nearest_bombs = sorted(feature_bombs, key=lambda x: self.get_rockless_distance(
+            x[0], feature_agent_position))
 
         # rotate field
         # vertical axis
@@ -242,9 +246,87 @@ class GameState:
         #     feature_agent_position[0], feature_agent_position[1] = feature_agent_position[1], feature_agent_position[0]
 
         # if the game state is not surviveable, the features do not matter
+        if len(nearest_bombs) > 0:
+            nearest_bomb = nearest_bombs[0]
+        else:
+            nearest_bomb = -1
         if self.dead or not self.can_agent_survive():
             return -1
         feature_dict = {}
+
+        closest_agent = ()
+        distance_to_enemy = 34 #Maximum number
+        for agent in self.other_agents:
+            if self.get_rockless_distance(self.agent_position,agent[3]) < distance_to_enemy:
+                closest_agent = agent
+                distance_to_enemy = self.get_rockless_distance(self.agent_position,agent[3])
+        feature_dict["distance_to_next_enemy"] = distance_to_enemy
+
+        #Encourage to walk more to the centre
+        steps_to_wall = [self.calculate_step_to_next_wall(self.agent_position)]
+        actions = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
+        actions_away_from_wall = [action for action in actions if action not in steps_to_wall]
+        feature_dict["actions_away_from_wall"] = actions_away_from_wall
+
+        if nearest_bomb == -1:
+            agent_to_nearest_bomb = -1
+            nearest_bomb_timer = -1
+        else:
+            agent_to_nearest_bomb = nearest_bomb[0] - \
+                np.array(feature_agent_position)
+            nearest_bomb_timer = nearest_bomb[1]
+        agent_can_move_left = feature_field[feature_agent_position[0] -
+                                            1][feature_agent_position[1]] == 0
+        agent_can_move_right = feature_field[feature_agent_position[0] +
+                                             1][feature_agent_position[1]] == 0
+        agent_can_move_up = feature_field[feature_agent_position[0]
+                                          ][feature_agent_position[1] - 1] == 0
+        agent_can_move_down = feature_field[feature_agent_position[0]
+                                            ][feature_agent_position[1] + 1] == 0
+        local_prec_explosion_map = np.array([[0, feature_prec_explosion_map[feature_agent_position[0]][feature_agent_position[1] - 1], 0],
+                                        [feature_prec_explosion_map[feature_agent_position[0] - 1][feature_agent_position[1]], 0,
+                                         feature_prec_explosion_map[feature_agent_position[0] + 1][feature_agent_position[1]]],
+                                        [0, feature_prec_explosion_map[feature_agent_position[0]][feature_agent_position[1] + 1], 0]])
+        local_map_1 = np.array([[0, feature_field[feature_agent_position[0]][feature_agent_position[1] - 1], 0],
+                              [feature_field[feature_agent_position[0] - 1][feature_agent_position[1]], 0,
+                               feature_field[feature_agent_position[0] + 1][feature_agent_position[1]]],
+                              [0, feature_field[feature_agent_position[0]][feature_agent_position[1] + 1], 0]])
+
+
+        # print(self.field)
+        feature_dict["local_map"] = local_map_1
+        # feature_dict["can_move_up"] = agent_can_move_up
+        # feature_dict["can_move_down"] = agent_can_move_down
+        # feature_dict["can_move_left"] = agent_can_move_left
+        # feature_dict["can_move_right"] = agent_can_move_right
+
+        # if the agent can place a bomb, pass whether the bomb would be surviveable or not
+        if self.agent_bombs_left:
+            feature_dict["would_survive_bomb"] = self.would_be_survivable
+
+        # if there are active explosions around the agent, pass the local explosion map
+        if np.max(local_prec_explosion_map) != 0:
+            # print("Local explosion map:")
+            # print(local_prec_explosion_map)
+            feature_dict["local_prec_explosion_map"] = local_prec_explosion_map
+
+        # if the agent is in or close to danger, pass a vector to the nearest safe square
+        if self.is_agent_close_to_danger or self.is_agent_in_danger:
+            # print("IN DANGER")
+            # print(self.can_agent_survive())
+            # feature_dict["agent_to_nearest_bomb"] = agent_to_nearest_bomb
+            # print("Danger")
+            # print(nearest_bomb)
+            # print(feature_agent_position)
+            # feature_dict["nearest_bomb_timer"] = nearest_bomb_timer
+            # if self.is_position_in_danger(self.agent_position):
+            nearest_safe_square = self.get_closest_safe_square()
+            if nearest_safe_square == -1:
+                feature_dict["agent_to_nearest_safe_square"] = -1
+            else:
+                agent_to_nearest_safe_square = np.array(self.adjust_position(nearest_safe_square) - np.array(feature_agent_position))
+                feature_dict["agent_to_nearest_safe_square"] = agent_to_nearest_safe_square
+
         if feature_other_agent_in_subfield != []:
             feature_dict["other_agent_in_subfield"] = True
             min_distance = float("inf")
@@ -257,7 +339,7 @@ class GameState:
             feature_dict["closest_agent"] = [closest_agent,distance]
             affected_by_own_bomb = self.get_bomb_explosion_squares(feature_agent_position)
             if closest_agent != None:
-                if closest_agent in affected_by_own_bomb:
+                if closest_agent in affected_by_own_bomb and self.is_position_survivable(self.get_agent_position(),[self.get_agent_position()])==True:
                     feature_dict["closest_agent_is_in_danger"] = True
                     if self.is_position_survivable(closest_agent,[feature_agent_position])==False:
                         feature_dict["closest_agent_cant_survive"] = True
@@ -451,13 +533,13 @@ class GameState:
             final_hash ^= a_hash
         return final_hash
 
-    def get_potential(self, print_components=False):
+    def get_potential_subfield(self, print_components=False):
         """Calculate the potential of this game state.
 
         Returns:
             float: Potential of game state.
         """
-        game_state_feature = self.to_features()
+        game_state_feature = self.to_features_subfield()
         if self.dead:
             #print("State: Agent dead")
             return -1000000
@@ -473,7 +555,13 @@ class GameState:
             if game_state_feature["other_agent_in_subfield"] == True:
                 closest_agent,distance_to_enemy = game_state_feature["closest_agent"]
             else:
-                closest_agent,distance_to_enemy = (),7 #Maximum possible distance
+                closest_agent = ()
+                distance_to_enemy = 34 #Maximum number
+                for agent in self.other_agents:
+                    if self.get_rockless_distance(self.agent_position,agent[3]) < distance_to_enemy:
+                        closest_agent = agent
+                        distance_to_enemy = self.get_rockless_distance(self.agent_position,agent[3])
+
             crate_potential = 0
             for bomb in self.bombs:
                 affected_tiles = self.get_bomb_explosion_squares(bomb[0])
@@ -508,7 +596,8 @@ class GameState:
                 print(f"Distance to enemy: {distance_to_enemy}")
                 print(f"Bomb near opponent: {bomb_near_opponent}")
                 print(f"Oponenet cant survive: {opponent_cant_survive}")
-            return 30 * (self.agent_score) + self.get_closest_bomb_distance()-15*distance_to_enemy + 3*bomb_near_opponent +4*opponent_cant_survive - 10 * danger_penalty
+            #return 30 * (self.agent_score) + self.get_closest_bomb_distance()-15*distance_to_enemy + 3*bomb_near_opponent +4*opponent_cant_survive - 10 * danger_penalty
+            return 30 * (self.agent_score) + self.get_closest_bomb_distance()-5*distance_to_enemy + 1*bomb_near_opponent +3*opponent_cant_survive
         else:
             #print("State: Cant surivive")
             return -1000000
@@ -662,3 +751,248 @@ class GameState:
                     result_field[i, j] = -1
         
         return result_field,other_agent
+    
+    def to_features(self):
+        """Convert game state to more generic feature vector.
+
+        Returns:
+            tuple: List of features.
+        """
+        # field: exploit symmetry, only consider boxes nearby, (cut off outer ring/only boxes)
+        # other_agents: position and bombs_left, exploit_symmetry
+        # bombs: only nearby, position and timer, exploit symmetry
+        # explosion_map: exploit symmetry
+        # path to safety feature
+
+        feature_field = self.field
+        feature_explosion_map = self.explosion_map
+        feature_prec_explosion_map = self.prec_explosion_map
+        feature_agent_position = np.array(
+            [self.agent_position[0], self.agent_position[1]])
+
+        # rotate field
+        # vertical axis
+        if self.agent_position[0] > 8:
+            self.flipped_vertical = True
+            feature_field = np.flipud(feature_field)
+            feature_explosion_map = np.flipud(feature_explosion_map)
+            feature_prec_explosion_map = np.flipud(feature_prec_explosion_map)
+            feature_agent_position[0] = 16 - feature_agent_position[0]
+        # horizontal axis
+        if self.agent_position[1] > 8:
+            self.flipped_horizontal = True
+            feature_field = np.fliplr(feature_field)
+            feature_explosion_map = np.fliplr(feature_explosion_map)
+            feature_prec_explosion_map = np.fliplr(feature_prec_explosion_map)
+            feature_agent_position[1] = 16 - feature_agent_position[1]
+        # backslash axis
+        # if feature_agent_position[0] < feature_agent_position[1]:
+        #     self.flipped_backslash = True
+        #     feature_field = feature_field.T
+        #     feature_explosion_map = feature_explosion_map.T
+        #     # mirror agent position
+        #     feature_agent_position[0], feature_agent_position[1] = feature_agent_position[1], feature_agent_position[0]
+
+        # rotate coins and bombs and filter out closest one
+        feature_coins = [np.array(self.adjust_position(
+            [coin[0], coin[1]])) for coin in self.coins]
+        nearest_coins = sorted(feature_coins, key=lambda x: self.get_rockless_distance(
+            x, feature_agent_position))
+        feature_bombs = [[np.array(self.adjust_position(
+            [bomb[0][0], bomb[0][1]])), bomb[1]] for bomb in self.bombs]
+        nearest_bombs = sorted(feature_bombs, key=lambda x: self.get_rockless_distance(
+            x[0], feature_agent_position))
+        if len(nearest_coins) > 0:
+            if nearest_coins[0][0] == feature_agent_position[0] and nearest_coins[0][1] == feature_agent_position[1] and len(nearest_coins) > 1:
+                nearest_coin = nearest_coins[1]
+            else:
+                nearest_coin = nearest_coins[0]
+        else:
+            nearest_coin = np.array([0, 0])
+        if len(nearest_bombs) > 0:
+            nearest_bomb = nearest_bombs[0]
+        else:
+            nearest_bomb = -1
+
+        agent_to_nearest_coin = np.array(
+            nearest_coin) - np.array(feature_agent_position)
+        if nearest_bomb == -1:
+            agent_to_nearest_bomb = -1
+            nearest_bomb_timer = -1
+        else:
+            agent_to_nearest_bomb = nearest_bomb[0] - \
+                np.array(feature_agent_position)
+            nearest_bomb_timer = nearest_bomb[1]
+        agent_can_move_left = feature_field[feature_agent_position[0] -
+                                            1][feature_agent_position[1]] == 0
+        agent_can_move_right = feature_field[feature_agent_position[0] +
+                                             1][feature_agent_position[1]] == 0
+        agent_can_move_up = feature_field[feature_agent_position[0]
+                                          ][feature_agent_position[1] - 1] == 0
+        agent_can_move_down = feature_field[feature_agent_position[0]
+                                            ][feature_agent_position[1] + 1] == 0
+        local_prec_explosion_map = np.array([[0, feature_prec_explosion_map[feature_agent_position[0]][feature_agent_position[1] - 1], 0],
+                                        [feature_prec_explosion_map[feature_agent_position[0] - 1][feature_agent_position[1]], 0,
+                                         feature_prec_explosion_map[feature_agent_position[0] + 1][feature_agent_position[1]]],
+                                        [0, feature_prec_explosion_map[feature_agent_position[0]][feature_agent_position[1] + 1], 0]])
+        local_map_1 = np.array([[0, feature_field[feature_agent_position[0]][feature_agent_position[1] - 1], 0],
+                              [feature_field[feature_agent_position[0] - 1][feature_agent_position[1]], 0,
+                               feature_field[feature_agent_position[0] + 1][feature_agent_position[1]]],
+                              [0, feature_field[feature_agent_position[0]][feature_agent_position[1] + 1], 0]])
+
+        # if the game state is not surviveable, the features do not matter
+        if self.dead or not self.can_agent_survive():
+            return -1
+        feature_dict = {}
+
+        # print(self.field)
+        feature_dict["local_map"] = local_map_1
+        # feature_dict["can_move_up"] = agent_can_move_up
+        # feature_dict["can_move_down"] = agent_can_move_down
+        # feature_dict["can_move_left"] = agent_can_move_left
+        # feature_dict["can_move_right"] = agent_can_move_right
+
+        # if the agent can place a bomb, pass whether the bomb would be surviveable or not
+        if self.agent_bombs_left:
+            feature_dict["would_survive_bomb"] = self.would_be_survivable
+
+        # if there are active explosions around the agent, pass the local explosion map
+        if np.max(local_prec_explosion_map) != 0:
+            # print("Local explosion map:")
+            # print(local_prec_explosion_map)
+            feature_dict["local_prec_explosion_map"] = local_prec_explosion_map
+
+        # if the agent is in or close to danger, pass a vector to the nearest safe square
+        if self.is_agent_close_to_danger or self.is_agent_in_danger:
+            # print("IN DANGER")
+            # print(self.can_agent_survive())
+            # feature_dict["agent_to_nearest_bomb"] = agent_to_nearest_bomb
+            # print("Danger")
+            # print(nearest_bomb)
+            # print(feature_agent_position)
+            # feature_dict["nearest_bomb_timer"] = nearest_bomb_timer
+            # if self.is_position_in_danger(self.agent_position):
+            nearest_safe_square = self.get_closest_safe_square()
+            if nearest_safe_square == -1:
+                feature_dict["agent_to_nearest_safe_square"] = -1
+            else:
+                agent_to_nearest_safe_square = np.array(self.adjust_position(nearest_safe_square) - np.array(feature_agent_position))
+                feature_dict["agent_to_nearest_safe_square"] = agent_to_nearest_safe_square
+            # print(agent_to_nearest_safe_square)
+            # print(feature_bombs)
+            # print(feature_agent_position)
+            # print(agent_to_nearest_safe_square)
+            # print(local_map)
+
+        # if the agent is not in or close to danger and has no explosions around
+        elif np.max(local_prec_explosion_map) == 0:
+            # print("SAFE")
+
+            # if there are coins on the map, pass a vector to the nearest coin
+            if len(self.coins) > 0:
+                feature_dict["agent_to_nearest_coin"] = agent_to_nearest_coin
+
+            # if there are not coins on the map, pass the local map
+            # else:
+            #     feature_dict["local_map"] = local_map
+                # if self.agent_bombs_left:
+                #     feature_dict["would_bomb_be_surviveable"] = self.would_be_survivable
+                # if len(self.bombs) > 0:
+                #     feature_dict["agent_to_nearest_bomb"] = agent_to_nearest_bomb
+        # print(feature_list)
+        return feature_dict
+    
+    def get_potential(self, print_components=False):
+        """Calculate the potential of this game state.
+        Returns:
+            float: Potential of game state.
+        """
+        if self.dead:
+            #print("Dead")
+            return -1000000
+        closest_coin_distance = self.get_closest_coin_distance()
+        if closest_coin_distance == 0:
+            add_one = 1
+        else:
+            add_one = 0
+        if self.can_agent_survive():
+            game_state_feature = self.to_features_subfield()
+            #print("Survive")
+            # discourage going near bombs
+            if self.is_agent_in_danger:
+                danger_penalty = 1
+            else:
+                danger_penalty = 0
+
+            # encourage blowing up crates
+            if game_state_feature["other_agent_in_subfield"] == True:
+                closest_agent,distance_to_enemy = game_state_feature["closest_agent"]
+                agent_in_subfield = 1
+            else:
+                agent_in_subfield = 0
+                closest_agent = ()
+                distance_to_enemy = 34 #Maximum number
+                for agent in self.other_agents:
+                    if self.get_rockless_distance(self.agent_position,agent[3]) < distance_to_enemy:
+                        closest_agent = agent
+                        distance_to_enemy = self.get_rockless_distance(self.agent_position,agent[3])
+            
+            # encourage blowing up crates
+            crate_potential = 0
+            for bomb in self.bombs:
+                affected_tiles = self.get_bomb_explosion_squares(bomb[0])
+                crate_potential += len(
+                    [pos for pos in affected_tiles if self.field[pos[0]][pos[1]] == 1])
+                # potential weights
+                # coin distance: 1
+                # danger penalty: 5 (coin distance + 1)
+                # crate potential: 6 (danger penalty + 1)
+                # coin count: 19 (crate potential * 3 + 1)
+                # agent score: 30 ((15 + 15) * coin distance)
+                # distance to closest bomb
+            n_crates = len([tile_value for x in self.field for tile_value in x if tile_value == 1])
+
+            #Encourage placing bombs near to opponents
+            if game_state_feature["closest_agent_is_in_danger"] == True:
+                bomb_near_opponent = 1
+            else:
+                bomb_near_opponent = 0
+
+            #Encourage brining opponenet in unsurvivable positions:
+            if game_state_feature["closest_agent_cant_survive"] == True:
+                opponent_cant_survive = 1
+            else:
+                opponent_cant_survive = 0
+
+            if print_components:
+                print(f"Agent score: {self.agent_score}")
+                print(f"Closest coin distance: {self.get_closest_coin_distance()}")
+                print(f"Closest bomb distance: {self.get_closest_bomb_distance()}")
+                print(f"Danger penalty: {danger_penalty}")
+                print(f"Number of crates: {n_crates}")
+                print(f"Crate potential: {crate_potential}")
+            return 100 * (self.agent_score + add_one) - self.get_closest_coin_distance(k=add_one) + self.get_closest_bomb_distance() - 5 * danger_penalty - 9 * n_crates + 6 * crate_potential-1*distance_to_enemy + 10*bomb_near_opponent +25*opponent_cant_survive+15*agent_in_subfield
+        else:
+            #print("Cant surivive")
+            return -1000000
+        
+    def calculate_step_to_next_wall(self,agent_position):
+
+        if agent_position[0] < 16-agent_position[0]:
+            direction_in_x = "LEFT"
+            distance_in_x = agent_position[0]
+        else:
+            direction_in_x = "RIGHT"
+            distance_in_x = 16-agent_position[0]
+    
+        if agent_position[1] < 16-agent_position[1]:
+            direction_in_y = "UP"
+            distance_in_y = agent_position[1]
+        else:
+            direction_in_y = "DOWN"
+            distance_in_y = 16-agent_position[1]
+
+        if distance_in_x < distance_in_y:
+            return direction_in_x
+        else:
+            return direction_in_y

@@ -14,9 +14,16 @@ import math
 NEW_FIELD_VISITED = "NEW_FIELD_VISITED"
 OPPONENT_IN_DANGER_AND_PLACED_BOMB = "OPPONENT_IN_DANGER_AND_PLACED_BOMB"
 OPPONENT_CANT_SURVIVE_AND_PLACED_BOMB = "OPPONENT_CANT_SURVIVE_AND_PLACED_BOMB"
+OPPONENT_IN_DANGER = "OPPONENT_IN_DANGER"
+OPPONENT_CANT_SURVIVE = "OPPONENT_CANT_SURVIVE"
 KILLED_BY_WAITING = "KILLED_BY_WAITING"
 KILLED_BY_OWN_BOMB = "KILLED_BY_OWN_BOMB"
 TOTALLY_NEW_FIELD = "TOTALLY_NEW_FIELD"
+CLOSER_TO_ENEMY = "CLOSER_TO_ENEMY"
+WALKED_AWAY_FROM_CLOSEST_WALL = "WALKED_AWAY_FROM_CLOSEST_WALL"
+NOT_KILLED_BY_OWN_BOMB = "NOT_KILLED_BY_OWN_BOMB"
+NOT_KILLED_BY_WAITING = "NOT_KILLED_BY_WAITING"
+
 
 def setup_training(self):
     """
@@ -31,9 +38,9 @@ def setup_training(self):
         os.mkdir(self.TRAINING_DATA_DIRECTORY)
 
     self.DIMENSIONS_MAP = (17,17)
-    self.EPSILON = 1.0
+    self.EPSILON = 0.9
     self.STEP_DISCOUNT = 0.3
-    self.LEARNING_RATE = 0.1
+    self.LEARNING_RATE = 0.8
     self.Q = defaultdict(float)
     self.prev_Q = self.Q
     self.experience_buffer = list()
@@ -64,8 +71,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     """
     the_old_game_state = GameState(old_game_state)
     the_new_game_state = GameState(new_game_state)
-    the_old_game_state_feature = the_old_game_state.to_features()
-    the_new_game_state_feature = the_old_game_state.to_features()
+    the_old_game_state_feature = the_old_game_state.to_features_subfield()
+    the_new_game_state_feature = the_old_game_state.to_features_subfield()
 
     old_game_state_hash = the_old_game_state.to_hashed_features()
     new_game_state_hash = the_new_game_state.to_hashed_features()
@@ -137,8 +144,8 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
                                                                     1]["old_game_state"]
             game_state_after = self.experience_buffer[game_number][future_step]["old_game_state"]
 
-            game_state_before_feature = game_state_before.to_features()
-            game_state_after_feature = game_state_after.to_features()
+            game_state_before_feature = game_state_before.to_features_subfield()
+            game_state_after_feature = game_state_after.to_features_subfield()
             print_components = False
             events_for_rewards = self.experience_buffer[game_number][future_step]["events"]
 
@@ -146,11 +153,15 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
                 killed_by_waiting = True
                 #print("KILLED_BY_WAITING")
                 events_for_rewards.append(KILLED_BY_WAITING)
+            else:
+                events_for_rewards.append(NOT_KILLED_BY_WAITING)
 
             if future_step == step_number + 1 and current_action == "BOMB" and not game_state_after.can_agent_survive():
                 killed_by_own_bomb = True
                 #print("KILLED_BY_OWN_BOMB")
                 events_for_rewards.append(KILLED_BY_OWN_BOMB)
+            else:
+                events_for_rewards.append(NOT_KILLED_BY_OWN_BOMB)
             # if current_action == "WAIT":
             #     print_components = True
 
@@ -180,12 +191,22 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
                 self.already_visited[game_state_after.get_agent_position()] == 1
                 if self.total_visited[game_state_after.get_agent_position()] == 0:
                     events.append(TOTALLY_NEW_FIELD)
-            if game_state_before_feature["closest_agent_is_in_danger"]==True and current_action=="BOMB":
-                events_for_rewards.append(OPPONENT_IN_DANGER_AND_PLACED_BOMB)
-                print("Closest agent in danger")
-            if game_state_before_feature["closest_agent_cant_survive"]==True and current_action=="BOMB":
-                events_for_rewards.append(OPPONENT_CANT_SURVIVE_AND_PLACED_BOMB)
-                print("Cant Surive")
+            if game_state_before_feature["closest_agent_is_in_danger"]==True:
+                events_for_rewards.append(OPPONENT_IN_DANGER)
+                if current_action == "BOMB":
+                    events_for_rewards.append(OPPONENT_IN_DANGER_AND_PLACED_BOMB)
+                    print("Closest agent in danger")
+            if game_state_before_feature["closest_agent_cant_survive"]==True:
+                events_for_rewards.append(OPPONENT_CANT_SURVIVE)
+                if current_action == "BOMB":
+                    events_for_rewards.append(OPPONENT_CANT_SURVIVE_AND_PLACED_BOMB)
+                    print("Cant Surive")
+            if game_state_after_feature != -1:
+                if game_state_before_feature["distance_to_next_enemy"] > game_state_after_feature["distance_to_next_enemy"]:
+                    events_for_rewards.append(CLOSER_TO_ENEMY)
+            if current_action in game_state_before_feature["actions_away_from_wall"]:
+                events_for_rewards.append(WALKED_AWAY_FROM_CLOSEST_WALL)
+            
 
             reward += reward_from_events(self,events_for_rewards)
             if n > 1 and final_state.get_potential() > 0:
@@ -284,15 +305,28 @@ def reward_from_events(self, events: List[str]) -> int:
     certain behavior.
     """
     game_rewards = {
-        e.KILLED_SELF: -30,
+        e.KILLED_SELF: -1000,
         NEW_FIELD_VISITED: 50,
-        e.KILLED_OPPONENT:29,
-        OPPONENT_IN_DANGER_AND_PLACED_BOMB:15,
-        OPPONENT_CANT_SURVIVE_AND_PLACED_BOMB:25,
-        e.WAITED:-50,
+        e.KILLED_OPPONENT:500,
+        OPPONENT_IN_DANGER_AND_PLACED_BOMB:25,
+        OPPONENT_CANT_SURVIVE_AND_PLACED_BOMB:45,
+        OPPONENT_IN_DANGER:15,
+        OPPONENT_CANT_SURVIVE:35,
         TOTALLY_NEW_FIELD:100,
-        KILLED_BY_OWN_BOMB:-50,
-        KILLED_BY_WAITING:-40
+        KILLED_BY_OWN_BOMB:-70,
+        KILLED_BY_WAITING:-60,
+        NOT_KILLED_BY_OWN_BOMB:10,
+        NOT_KILLED_BY_WAITING:10,
+        CLOSER_TO_ENEMY:25,
+        e.MOVED_UP:-.1,
+        e.MOVED_LEFT:-.1,
+        e.MOVED_RIGHT:-.1,
+        e.MOVED_DOWN:-.1,
+        e.SURVIVED_ROUND:100,
+        e.COIN_COLLECTED: 100,
+        WALKED_AWAY_FROM_CLOSEST_WALL:20,
+        e.BOMB_DROPPED:-50,
+        e.WAITED:-25
     }
     #print(events)
     """e.MOVED_UP:-.001,

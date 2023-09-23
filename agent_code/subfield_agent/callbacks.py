@@ -52,6 +52,7 @@ def act(self, game_state: dict) -> str:
     :return: The action to take as a string.
     """
     game_state = GameState(game_state)
+
     #print(game_state.can_agent_survive())
     # print(f"Game state is surviveable: {game_state.can_agent_survive()}")
     # print(game_state.agent_position)
@@ -60,7 +61,10 @@ def act(self, game_state: dict) -> str:
     #     print("DEAD")
     # else:
     if self.train and random.random() < self.EPSILON:
-        return np.random.choice(game_state.get_possible_moves())
+        #return np.random.choice(game_state.get_possible_moves())
+        return np.random.choice(['UP', 'RIGHT', 'DOWN', 'LEFT'])
+    if not self.train and random.random() > 0.8:
+        return np.random.choice(['UP', 'RIGHT', 'DOWN', 'LEFT'])
     hashed_gamestate = game_state.to_hashed_features()
     action_values = dict()
     for action in self.ACTIONS:
@@ -75,7 +79,7 @@ def act(self, game_state: dict) -> str:
     default_valued_actions = [action for action in possible_moves if int(action_values[action]) == 0]
     # only take gamestates as training data, which have been explored a bit
     if len(default_valued_actions) < 3 and not self.train:
-        self.hash_to_features[hashed_gamestate] = game_state.to_features()
+        self.hash_to_features[hashed_gamestate] = game_state.to_features_subfield()
         self.hash_to_action_values[hashed_gamestate] = {action: action_values[action] for action in self.ACTIONS}
     if max(action_values[action] for action in possible_moves) == 0 and len(default_valued_actions) > 1:
         if not self.train:
