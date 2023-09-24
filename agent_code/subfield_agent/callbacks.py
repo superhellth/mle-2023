@@ -121,6 +121,7 @@ def act(self, game_state: dict) -> str:
         return chosen_action
 
     else:
+
         hashed_gamestate = game_state.to_hashed_features()
         action_values = dict()
         for action in self.ACTIONS:
@@ -147,9 +148,9 @@ def act(self, game_state: dict) -> str:
             pass
 
         if game_state.round % 10 == 0 and not self.train:
-            with open(self.TRAINING_DATA_DIRECTORY + "hash_to_features_hitman.json", "w", encoding="utf-8") as f:
+            with open(self.TRAINING_DATA_DIRECTORY + "hash_to_features_coins_crates.json", "w", encoding="utf-8") as f:
                 f.write(json.dumps(self.hash_to_features_coins_crates, cls=NumpyEncoder))
-            with open(self.TRAINING_DATA_DIRECTORY + "hash_to_action_values_hitman.json", "w", encoding="utf-8") as f:
+            with open(self.TRAINING_DATA_DIRECTORY + "hash_to_action_coins_crates.json", "w", encoding="utf-8") as f:
                 f.write(ujson.dumps(self.hash_to_action_values_coins_crates))
 
         return chosen_action
