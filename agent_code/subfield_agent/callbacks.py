@@ -83,7 +83,7 @@ def act(self, game_state: dict) -> str:
             agent_in_subfield = False
     else:
         agent_in_subfield = False
-
+    #agent_in_subfield = True
     #If other agent is close switch to combate mode (hitman), else stay in normal mode
     if agent_in_subfield == True:
         hashed_gamestate = game_state.to_hashed_features()
