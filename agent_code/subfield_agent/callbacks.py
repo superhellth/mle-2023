@@ -2,7 +2,8 @@ import os
 import ujson
 import json
 import random
-from agent_code.subfield_agent.state import GameState
+from agent_code.subfield_agent.state import GameState as gs1
+from agent_code.nicos_agent.state import GameState as gs2
 from collections import defaultdict
 
 import numpy as np
@@ -65,15 +66,16 @@ def act(self, game_state: dict) -> str:
     :param game_state: The dictionary that describes everything on the board.
     :return: The action to take as a string.
     """
-    game_state = GameState(game_state)
+    game_state_raphael = gs1(game_state)
+    game_state_nico = gs2(game_state)
 
     if self.train and random.random() < self.EPSILON:
         return np.random.choice(['UP', 'RIGHT', 'DOWN', 'LEFT'])
     
-    if not self.train and random.random() > 0.8:
-        return np.random.choice(['UP', 'RIGHT', 'DOWN', 'LEFT'])
+    """if not self.train and random.random() > 0.8:
+        return np.random.choice(['UP', 'RIGHT', 'DOWN', 'LEFT'])"""
     
-    game_state_subfield = game_state.to_features_subfield()
+    game_state_subfield = game_state_raphael.to_features_subfield()
 
     #Check rather other agent is close, in this case I an 7x7 field around the player
     if isinstance(game_state_subfield, dict):
@@ -86,7 +88,7 @@ def act(self, game_state: dict) -> str:
 
     #If other agent is close switch to combate mode (hitman), else stay in normal mode
     if agent_in_subfield == True:
-        hashed_gamestate = game_state.to_hashed_features()
+        hashed_gamestate = game_state_raphael.to_hashed_features()
         action_values = dict()
         for action in self.ACTIONS:
             if (hashed_gamestate, action) in self.Q_HITMAN:
@@ -94,14 +96,14 @@ def act(self, game_state: dict) -> str:
             else:
                 action_values[action] = 0
 
-        possible_moves = game_state.get_possible_moves()
-        action_values = {game_state.adjust_movement(action): action_values[action] for action in action_values}
+        possible_moves = game_state_raphael.get_possible_moves()
+        action_values = {game_state_raphael.adjust_movement(action): action_values[action] for action in action_values}
         chosen_action = sorted([(action, action_values[action]) for action in possible_moves], key=lambda x: x[1], reverse=True)[0][0]
         default_valued_actions = [action for action in possible_moves if int(action_values[action]) == 0]
 
         # only take gamestates as training data, which have been explored a bit
         if len(default_valued_actions) < 3 and not self.train:
-            self.hash_to_features_hitman[hashed_gamestate] = game_state.to_features_subfield()
+            self.hash_to_features_hitman[hashed_gamestate] = game_state_raphael.to_features_subfield()
             self.hash_to_action_values_hitman[hashed_gamestate] = {action: action_values[action] for action in self.ACTIONS}
         if max(action_values[action] for action in possible_moves) == 0 and len(default_valued_actions) > 1:
             if not self.train:
@@ -112,7 +114,7 @@ def act(self, game_state: dict) -> str:
         elif not self.train:
             pass
 
-        if game_state.round % 10 == 0 and not self.train:
+        if game_state_raphael.round % 10 == 0 and not self.train:
             with open(self.TRAINING_DATA_DIRECTORY + "hash_to_features_hitman.json", "w", encoding="utf-8") as f:
                 f.write(json.dumps(self.hash_to_features_hitman, cls=NumpyEncoder))
             with open(self.TRAINING_DATA_DIRECTORY + "hash_to_action_values_hitman.json", "w", encoding="utf-8") as f:
@@ -121,8 +123,7 @@ def act(self, game_state: dict) -> str:
         return chosen_action
 
     else:
-
-        hashed_gamestate = game_state.to_hashed_features()
+        hashed_gamestate = game_state_nico.to_hashed_features()
         action_values = dict()
         for action in self.ACTIONS:
             if (hashed_gamestate, action) in self.Q_COINS_CRATES:
@@ -130,14 +131,14 @@ def act(self, game_state: dict) -> str:
             else:
                 action_values[action] = 0
 
-        possible_moves = game_state.get_possible_moves()
-        action_values = {game_state.adjust_movement(action): action_values[action] for action in action_values}
+        possible_moves = game_state_nico.get_possible_moves()
+        action_values = {game_state_nico.adjust_movement(action): action_values[action] for action in action_values}
         chosen_action = sorted([(action, action_values[action]) for action in possible_moves], key=lambda x: x[1], reverse=True)[0][0]
         default_valued_actions = [action for action in possible_moves if int(action_values[action]) == 0]
 
         # only take gamestates as training data, which have been explored a bit
         if len(default_valued_actions) < 3 and not self.train:
-            self.hash_to_features_coins_crates[hashed_gamestate] = game_state.to_features_subfield()
+            self.hash_to_features_coins_crates[hashed_gamestate] = game_state_nico.to_features()
             self.hash_to_action_values_coins_crates[hashed_gamestate] = {action: action_values[action] for action in self.ACTIONS}
         if max(action_values[action] for action in possible_moves) == 0 and len(default_valued_actions) > 1:
             if not self.train:
@@ -147,7 +148,7 @@ def act(self, game_state: dict) -> str:
         elif not self.train:
             pass
 
-        if game_state.round % 10 == 0 and not self.train:
+        if game_state_nico.round % 10 == 0 and not self.train:
             with open(self.TRAINING_DATA_DIRECTORY + "hash_to_features_coins_crates.json", "w", encoding="utf-8") as f:
                 f.write(json.dumps(self.hash_to_features_coins_crates, cls=NumpyEncoder))
             with open(self.TRAINING_DATA_DIRECTORY + "hash_to_action_coins_crates.json", "w", encoding="utf-8") as f:
