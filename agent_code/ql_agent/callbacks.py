@@ -1,6 +1,5 @@
 import os
 import ujson
-import json
 import random
 from .state import GameState
 from collections import defaultdict
@@ -37,6 +36,7 @@ def setup(self):
                 hash = int(splits[0])
                 action = splits[1][1:-1]
                 self.Q[(hash, action)] = loaded_dict[key]
+    ### deepQ-Learning training data collection
     # if not self.train:
     #     self.hash_to_features = dict()
     #     self.hash_to_action_values = dict()
@@ -52,13 +52,6 @@ def act(self, game_state: dict) -> str:
     :return: The action to take as a string.
     """
     game_state = GameState(game_state)
-    # print(f"Game state is surviveable: {game_state.can_agent_survive()}")
-    # print(game_state.agent_position)
-    # print(game_state.explosion_map)
-    # if game_state.to_features() == -1:
-    #     print("DEAD")
-    # else:
-    #     print("ALIVE")
     if self.train and random.random() < self.EPSILON:
         return np.random.choice(game_state.get_possible_moves())
     hashed_gamestate = game_state.to_hashed_features()
@@ -68,29 +61,19 @@ def act(self, game_state: dict) -> str:
             action_values[action] = self.Q[(hashed_gamestate, action)]
         else:
             action_values[action] = 0
-    # print(action_values)
     possible_moves = game_state.get_possible_moves()
     action_values = {game_state.adjust_movement(action): action_values[action] for action in action_values}
     chosen_action = sorted([(action, action_values[action]) for action in possible_moves], key=lambda x: x[1], reverse=True)[0][0]
     default_valued_actions = [action for action in possible_moves if int(action_values[action]) == 0]
+    ### deepQ-Learning training data collection
     # only take gamestates as training data, which have been explored a bit
     # if len(default_valued_actions) < 3 and not self.train:
     #     self.hash_to_features[hashed_gamestate] = game_state.to_features()
     #     self.hash_to_action_values[hashed_gamestate] = {action: action_values[action] for action in self.ACTIONS}
     if max(action_values[action] for action in possible_moves) == 0 and len(default_valued_actions) > 1:
-        if not self.train:
-            pass
-            # print("Choosing random action")
-            # print(game_state.to_features())
-        # print(action_values)
-        return np.random.choice(possible_moves)
-    elif not self.train:
-        pass
-        # print(action_values)
-        # print(chosen_action)
-        # print(game_state.get_closest_coin_distance())
-    # print(chosen_action)
-
+        return np.random.choice(default_valued_actions)
+    
+    ### deepQ-Learning training data collection
     # if game_state.round % 10 == 0 and not self.train:
     #     with open(self.TRAINING_DATA_DIRECTORY + "hash_to_features.json", "w", encoding="utf-8") as f:
     #         f.write(json.dumps(self.hash_to_features, cls=NumpyEncoder))
@@ -100,6 +83,7 @@ def act(self, game_state: dict) -> str:
     return chosen_action
 
 
+### deepQ-Learning training data collection
 # class NumpyEncoder(json.JSONEncoder):
 #     def default(self, obj):
 #         if isinstance(obj, np.ndarray):
