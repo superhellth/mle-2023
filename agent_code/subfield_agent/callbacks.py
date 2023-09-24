@@ -72,9 +72,6 @@ def act(self, game_state: dict) -> str:
     if self.train and random.random() < self.EPSILON:
         return np.random.choice(['UP', 'RIGHT', 'DOWN', 'LEFT'])
     
-    """if not self.train and random.random() > 0.8:
-        return np.random.choice(['UP', 'RIGHT', 'DOWN', 'LEFT'])"""
-    
     game_state_subfield = game_state_raphael.to_features_subfield()
 
     #Check rather other agent is close, in this case I an 7x7 field around the player
