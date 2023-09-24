@@ -2,7 +2,7 @@ from collections import namedtuple, deque
 
 import pickle
 from typing import List
-
+import numpy as np
 import events as e
 from .callbacks import state_to_features
 
@@ -22,6 +22,7 @@ PLACEHOLDER_EVENT = "PLACEHOLDER"
 
 training_folder_name = "Training"
 qtable_file_name = "qtable.pkl"
+btable_file_name = "btable.pkl"
 
 
 def setup_directory():
@@ -29,11 +30,24 @@ def setup_directory():
         os.makedirs(training_folder_name)
 
 
-def setup_qtable():
+def setup_qtable(self):
     file_path = os.path.join(training_folder_name, qtable_file_name)
+    file_path_btable = os.path.join(training_folder_name, btable_file_name)
     if not os.path.exists(file_path):
         with open(file_path, "wb") as file:
+            self.qtable = {}
+    else:
+        with open(file_path, "rb") as file:
+           self.qtable = pickle.load(file) # Load pretrained model, continue from here
+    '''if not os.path.exists(file_path_btable):
+        self.btable = {}
+        with open(file_path_btable, "wb") as file:
             pass
+
+    else:
+        with open(file_path_btable, "rb") as file:
+           self.btable = pickle.load(file) # Load pretrained btable'''
+
 
 
 def setup_training(self):
@@ -49,10 +63,21 @@ def setup_training(self):
     # (s, a, r, s')
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
     setup_directory()
-    setup_qtable()  # here we will write our dictionary later
-    self.qtable = {}
+    setup_qtable(self)  # here we will write our dictionary later
+    # self.qtable = {}
+    self.action_history = []
+    self.round_counter = 0 #To track the rounds and periodically store the qtable into the file
+    self.period = 200 #
+    #self.visited = []
+    self.history_size = 4
+    self.history = []
 
 
+def explosionToField(explosion_map, field):
+    explosion_map_array = np.array(explosion_map)
+    field_array = np.array(field)
+    field_array[explosion_map_array == 1] += 8
+    field[:] = field_array
 def coinsToField(coins, field):
     for coin in coins:
         field[coin[0]][coin[1]] = 2
@@ -66,7 +91,12 @@ def bombToField(bombs, field):  # Explosion Map missing
     for bomb in bombs:
         (bomb_x, bomb_y) = bomb[0]
         timer = bomb[1]
-        field[bomb_x][bomb_y] = 4 + timer
+        for i in range(-3, 4):
+            if bomb_x + i < 17 and bomb_x + i >= 0:
+                field[bomb_x + i][bomb_y] = 4 + timer
+        for j in range(-3, 4):
+            if bomb_y + j < 17 and bomb_y + j >= 0:
+                field[bomb_x][bomb_y + j] = 4 + timer
 
 def kuerzesterWegZumTile(x, y, field, tile_value):
     '''This function searches the closest path to a coin given the agents coordinates (x,y) and the field of the current gamestate and the value of the tile that should be found.
@@ -232,23 +262,55 @@ def keepOneEnemy(crop):
         (closest_coin_x, closest_coin_y) = closest_coin
         crop[closest_coin_x][closest_coin_y] = 3
 
+def coinDirection(x,y,field,crop): #gives additional hint of the direction towards the next coin outside (even trough crates) if there is no coin in crop
+    if naherTile(3,3,crop,2):
+        return (0,0)
+    else:
+        coin_coord = naherTile(x,y,field,2)
+        if coin_coord:
+            (x_coin,y_coin) = coin_coord
+            normalize_y = abs(y-y_coin)
+            normalize_x= abs(x-x_coin)
+            if normalize_x == 0:
+                normalize_x=1
+            if normalize_y == 0:
+                normalize_y=1
+            return ((x-x_coin)/normalize_x,(y-y_coin)/normalize_y) #normalisieren!!! weniger Q states
+        return (0,0)
+
+
+def coinExistsOutside(x, y, field, crop):
+    if naherTile(3, 3, crop, 2):
+        return 0
+    else:
+        if naherTile(x, y, field, 2):
+            return 1
+        return 0
+
 def getCrop(game_state):
     field = game_state['field']
     x = game_state['self'][3][0]  # player_x_coordinate
     y = game_state['self'][3][1]  # player_y_coordinate
-    bomb_boolean = game_state['self'][2]  # if bomb is ticking or not
-
+    explosionToField(game_state['explosion_map'], field)
     coinsToField(game_state['coins'], field)
     opponentToField(game_state['others'], field)
     bombToField(game_state['bombs'], field)
     crop = cropSevenTiles(x, y, field.tolist())
     keepOneCoin(crop)
     keepOneEnemy(crop)
+    reduceInformation(crop)
 
     return crop
 
+def last_action(self, best_action):
+    if len(self.history) < self.history_size:
+        self.history.append(best_action)
+    else:
+        self.history.append(best_action)
+        self.history = self.history[1:] #Forget first element
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
+
     """
     Called once per step to allow intermediate rewards based on game events.
 
@@ -266,15 +328,16 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     :param events: The events that occurred when going from  `old_game_state` to `new_game_state`
     """
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
+    reward = 0
 
+    field = old_game_state['field']
+    x = old_game_state['self'][3][0]  # player_x_coordinate
+    y = old_game_state['self'][3][1]  # player_y_coordinate
 
-
-    crop1 = getCrop(old_game_state)
-    crop2 = getCrop(new_game_state)  # Very inefficient
-    state1 = tuple(tuple(row) for row in crop1)  # We gotta make state hashable i.e by turning it into a tuple to use it as key in dictionary
-    state2 = tuple(tuple(row) for row in crop2)  # We gotta make state hashable i.e by turning it into a tuple to use it as key in dictionary
+    bomb_active = not old_game_state['self'][2]
+    #action = self_action
     action = None
-    #How do we get our action? By the event...
+    # How do we get our action? By the event...
     if 'WAIT' in events:
         action = 'WAIT'
     if 'BOMB' in events:
@@ -287,44 +350,148 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         action = 'UP'
     if 'DOWN' in events:
         action = 'DOWN'
-    reward = 0
-    if 'GOT_KILLED' not in events:
-        reward+=10
+
+    crop1 = getCrop(old_game_state)
+    crop2 = getCrop(new_game_state)  # Very inefficient
+
+
+    direction_advice1 = coinDirection(x, y, old_game_state['field'], crop1)
+    direction_advice2 = coinDirection(x, y, new_game_state['field'], crop2)
+
+    state1 = (tuple(tuple(row) for row in crop1),direction_advice1)  # state1 alte gamestate
+    state2 = (tuple(tuple(row) for row in crop2),direction_advice2) # state2 ist der neue gamestate
+
+    #if (x,y) in self.visited:
+    #   reward-=15
+
+    #self.visited.append((x,y))
+
+
+    if direction_advice1[0] == 1:
+        if 'LEFT' == action:
+            reward += 35
+        else:
+            reward -= 10
+    if direction_advice1[1] == 1:
+        if 'UP'== action:
+            reward += 35
+        else:
+            reward -= 10
+    if direction_advice1[0] == -1:
+        if 'RIGHT' == action:
+            reward += 35
+        else:
+            reward -= 10
+    if direction_advice1[1] == -1:
+        if 'DOWN' == action:
+            reward += 35
+        else:
+            reward -= 10
+
+    #Reward for walking outside the bomb efficiently
+    for i in range(4, 9):
+        if crop1[3][3] == i:
+            escape_route = kuerzesterWegZumTile(3, 3, crop1, 0)
+            if escape_route is not False:
+                if action == escape_route[0]:
+                    reward+=70
+            else:
+                escape_route = kuerzesterWegZumTile(3, 3, crop1, 2)
+                if escape_route is not False:
+                    if action == escape_route[0]:
+                        reward += 70
+                else:
+                    reward-= 50
+        bomb_coord = naherTile(3, 3, crop1, i)
+        if bomb_coord:
+
+            (bomb_x, bomb_y) = bomb_coord
+            if bomb_x == 3 or bomb_y == 3:
+                reward -= 50
+    if bomb_active:
+        if crop1[3][3] == 0:
+            reward+=3
+    #Negative reward for walking from safe zone into bomb
+    if crop1[3][3] == 0 and crop1[3+1][3] in [4,5,6,7,8] and action == 'RIGHT':
+        reward-=200
+    if crop1[3][3] == 0 and crop1[3 - 1][3] in [4, 5, 6, 7, 8] and action == 'LEFT':
+        reward -= 200
+    if crop1[3][3] == 0 and crop1[3][3+1] in [4,5,6,7,8] and action == 'DOWN':
+        reward-=200
+    if crop1[3][3] == 0 and crop1[3][3-1] in [4,5,6,7,8] and action == 'UP':
+        reward-=200
+
+
+
+
+    '''for i in range(len(self.history) - 1):
+        for dir1, dir2 in opposite_directions:
+            if self.history[i] == dir1 and self.history[i + 1] == dir2:
+                reward -= 10  # Penalize for opposite directions between adjacent moves'''
+
+    if 'INVALID_ACTION' in events:
+        reward-=100
     if 'GOT_KILLED' in events:
-        reward-=1000
+        reward-=200
     if 'SURVIVE_ROUND' in events:
-        reward+=200
-    if 'CRATE_DESTROYED' in events:
-        reward += 40
+        reward+=0
+    if 'CRATE_DESTROYED' in events and 'GOT_KILLED' not in events:
+        reward += 1000
     if 'COIN_FOUND' not in events:
-        reward-=30 #WENN ES HIER BELOHNUNGEN GIBT NUTZT DER AGENT ES AUS ^^ in dem er ins subfield reintappt und wieder rausgeht!
+        reward+=30
     if 'COIN_COLLECTED' in events:
-        reward+=200
+        reward+=150
     if 'COIN_FOUND' in events:
-        reward+=40
-
-
-    field = old_game_state['field']
-    x = old_game_state['self'][3][0]  # player_x_coordinate
-    y = old_game_state['self'][3][1]  # player_y_coordinate
-    coin_direction = kuerzesterWegZumTile(3, 3, crop1, 2)
-    if coin_direction:#in the crop there exists a coin, award him
         reward+=10
-        if action == coin_direction[0]:
-            reward+=80
+    if 'WAIT' in events:
+        reward+=2
+    if 'BOMB' in events: #Hier kann man präziser werden. Droppe nur wenn an KRater drumherum liegt oder Gegner
+        reward+=80
+    if 'UP' in events:
+        reward += 2
+    if 'DOWN' in events:
+        reward += 2
+    if 'RIGHT' in events:
+        reward += 2
+    if 'LEFT' in events:
+        reward += 2
+    if bomb_active is False: #only reward coin collection if own bomb is not ticking
+        coin_direction = kuerzesterWegZumTile(3, 3, crop1, 2)
+        if coin_direction:#in the crop there exists a coin, award him
+            if action == coin_direction[0]:
+                reward+=30
+            else:
+                reward-=10
 
+
+    # 0 0
+    # 1 1 links oben
+    # -1 1 rechts oben
+    # 1 -1 links unten
+    # -1 -1 rechts unten
+
+
+    '''self.action_history.append(action)
+    if len(self.action_history) == 2:
+        if self.action_history[0]==self.action_history[1]:
+            reward-=100
+        else:
+            reward+=20
+        self.action_history = self.action_history[1:] #Remove oldest action, and now compare the next two new actions'''
     #ungefähre Richtung mitgeben in den state
 
 
-    epsilon = 0.9
+    epsilon = 0.6
     def maxQ(state):
         best_qvalue = 0
-        for action in ['UP', 'RIGHT', 'DOWN', 'LEFT','BOMB','WAIT']:
+        for action in ['UP', 'RIGHT', 'DOWN', 'LEFT','WAIT','BOMB']:
             qvalue = self.qtable.get((state, action), 0) #Simulates the "initialize all Q-values with 0
             if qvalue > best_qvalue:
                 best_qvalue = qvalue
         return best_qvalue
-    self.qtable[(state1,action)] = reward + epsilon * maxQ(state2)
+    self.qtable[(state1,action)] = reward + epsilon * maxQ(state2) #
+    #if self.qtable.get((state1, action), 0) < -1000000000:
+    #    print("something dangerous")
     # Idea: Add your own events to hand out rewards
     if ...:
         events.append(PLACEHOLDER_EVENT)
@@ -349,18 +516,14 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     :param self: The same object that is passed to all of your callbacks.
     """
     file_path = os.path.join(training_folder_name, qtable_file_name)
-    with open(file_path, "wb") as file:
-        pickle.dump(self.qtable, file)
-    
-    print("End of Round! Saved qtable...")
 
+    if self.round_counter % self.period == 0:
+        with open(file_path, "wb") as file:
+            pickle.dump(self.qtable, file)
+    self.round_counter += 1
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
     self.transitions.append(
         Transition(state_to_features(last_game_state), last_action, None, reward_from_events(self, events)))
-
-    # Store the model
-    with open("my-saved-model.pt", "wb") as file:
-        pickle.dump(self.model, file)
 
 
 def reward_from_events(self, events: List[str]) -> int:

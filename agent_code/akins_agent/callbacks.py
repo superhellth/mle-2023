@@ -5,8 +5,8 @@ import json
 
 import numpy as np
 
-ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT','WAIT']  # ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
-
+ACTIONS = ['UP', 'RIGHT', 'DOWN','LEFT','WAIT','BOMB']  # ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
+purelyRandom = ['UP', 'RIGHT', 'DOWN','LEFT','WAIT']  # ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
 def setup(self):
     """
@@ -28,7 +28,6 @@ def setup(self):
     training_folder_name = "Training"
     qtable_file_name = "qtable.pkl"
     file_path = os.path.join(training_folder_name, qtable_file_name)
-
     if os.path.exists(file_path): #Model from scratch if no model exists or train mode.
         with open(file_path, "rb") as file:
            self.qtable = pickle.load(file) # Load from model, in act() we just check if (state,*) is available and look for the according action in the table.
@@ -44,6 +43,8 @@ def setup(self):
         self.logger.info("Loading model from saved state.")
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
+    self.step_counter = 0
+
 
 
 def act(self, game_state: dict) -> str:
@@ -64,7 +65,18 @@ def act(self, game_state: dict) -> str:
     x = game_state['self'][3][0]  # player_x_coordinate
     y = game_state['self'][3][1]  # player_y_coordinate
     bomb_boolean = game_state['self'][2] #if bomb is ticking or not
+    explosion_map = game_state['explosion_map']
 
+    def explosionToField(explosion_map, field):
+        explosion_map_array = np.array(explosion_map)
+        field_array = np.array(field)
+
+        # Only update the dangerous bomb zone (where explosion_map is 1)
+        field_array[explosion_map_array == 1] += 8
+
+        # Update the original field with the modified values
+        field[:] = field_array
+    explosionToField(explosion_map,field)
     def coinsToField(coins,field):
         for coin in coins:
             field[coin[0]][coin[1]] = 2
@@ -74,11 +86,16 @@ def act(self, game_state: dict) -> str:
             (opponent_x,opponent_y) = opponent[3]
             field[opponent_x][opponent_y]=3
     opponentToField(game_state['others'],field)
-    def bombToField(bombs,field): #Explosion Map missing
+    def bombToField(bombs, field):  # Explosion Map missing
         for bomb in bombs:
-            (bomb_x,bomb_y) = bomb[0]
+            (bomb_x, bomb_y) = bomb[0]
             timer = bomb[1]
-            field[bomb_x][bomb_y]=4+timer
+            for i in range(-3, 4):
+                if bomb_x + i < 17 and bomb_x + i >= 0:
+                    field[bomb_x + i][bomb_y] = 4 + timer
+            for j in range(-3, 4):
+                if bomb_y + j < 17 and bomb_y + j >= 0:
+                    field[bomb_x][bomb_y + j] = 4 + timer
     bombToField(game_state['bombs'],field)
     def kuerzesterWegZumTile(x, y, field, tile_value):
         '''This function searches the closest path to a coin given the agents coordinates (x,y) and the field of the current gamestate and the value of the tile that should be found.
@@ -215,7 +232,7 @@ def act(self, game_state: dict) -> str:
             for tile_y in range(crop_length):
                 if not checkLineOfSight(tile_x,tile_y,3,3,crop):
                     crop[tile_x][tile_y] = 0
-
+    reduceInformation(crop)
     def keepOneCoin(crop):
         crop_length = len(crop[0])
         closest_coin = naherTile(3, 3, crop, 2)
@@ -239,6 +256,38 @@ def act(self, game_state: dict) -> str:
             (closest_coin_x, closest_coin_y) = closest_coin
             crop[closest_coin_x][closest_coin_y] = 3
     keepOneEnemy(crop)
+
+    def coinDirection(x, y, field, crop):  # gives additional hint of the direction towards the next coin outside (even trough crates) if there is no coin in crop
+        if naherTile(3, 3, crop, 2):
+            return (0, 0)
+        else:
+            coin_coord = naherTile(x, y, field, 2)
+            if coin_coord:
+                (x_coin, y_coin) = coin_coord
+                normalize_y = abs(y - y_coin)
+                normalize_x = abs(x - x_coin)
+                if normalize_x == 0:
+                    normalize_x = 1
+                if normalize_y == 0:
+                    normalize_y = 1
+                return ((x - x_coin) / normalize_x, (y - y_coin) / normalize_y)  # normalisieren!!! weniger Q states
+            return (0, 0)
+
+    def coinExistsOutside(x,y,field,crop):
+        if naherTile(3, 3, crop, 2):
+            return 0 #Tell the agent to focus on crop view
+        else:
+            if naherTile(x, y, field, 2):
+                return 1 #Tell agent there exists a coin outside
+            return 0 #Tell agent there is no coin outside
+    direction_advice1 = coinDirection(x,y,field,crop)
+
+    # 0 0
+    # 1 1 links oben
+    # -1 1 rechts oben
+    # 1 -1 links unten
+    # -1 -1 rechts unten
+
     #for element in crop:
     #   print(element)
     '''TODOS:
@@ -259,18 +308,18 @@ def act(self, game_state: dict) -> str:
     self.logger.debug("Querying model for action.")
 
 
-    def filterInvalidActions(x, y, bomb_boolean, actions): #You cannot walk into opponents , you cannot walk into bombs, walls and crates
+    def filterInvalidActions(x, y, bomb_boolean, actions): #You cannot walk into opponents or walls or crates
         '''This function filters invalid moves. Make sure this is executed after bomb,player information is inserted into the field.
         And make sure that field is not touched anymore (e.g. do not remove player information again for optimization reasons). You can modify crop as you wish.'''
         invalid_actions = []
         possible_actions = []
-        if field[x - 1][y] in [-1,1,3,4,5,6,7]:
+        if field[x - 1][y] in [-1,1,3]:
             invalid_actions.append("LEFT")
-        if field[x + 1][y] in [-1,1,3,4,5,6,7]:
+        if field[x + 1][y] in [-1,1,3]:
             invalid_actions.append("RIGHT")
-        if field[x][y - 1] in [-1,1,3,4,5,6,7]:
+        if field[x][y - 1] in [-1,1,3]:
             invalid_actions.append("UP")
-        if field[x][y + 1] in [-1,1,3,4,5,6,7]:
+        if field[x][y + 1] in [-1,1,3]:
             invalid_actions.append("DOWN")
         if not bomb_boolean:
             invalid_actions.append("BOMB")
@@ -280,32 +329,50 @@ def act(self, game_state: dict) -> str:
         return possible_actions
     possible_actions = filterInvalidActions(x, y, bomb_boolean, ACTIONS)
 
-    random_prob = .2
-    if random.random() < random_prob:#if self.train and random.random() < random_prob:
-        self.logger.debug("Choosing action purely at random.")
-        # 80%: walk in any direction. 10% wait. 10% bomb.
-        return np.random.choice(possible_actions)  # second argument p=[.2, .2, .2, .2, .1, .1]
 
 
-    state =  tuple(tuple(row) for row in crop) #We gotta make state hashable i.e by turning it into a tuple to use it as key in dictionary
+
+
     best_action = None
-    best_qvalue = float('-inf')
-
-    final_action = None
     if not self.train:
-        for action in possible_actions:
+        random_prob = .1
+        if random.random() < random_prob:#if self.train and random.random() < random_prob:
+            self.logger.debug("Choosing action purely at random.")
+            # 80%: walk in any direction. 10% wait. 10% bomb.
+            best_action =  np.random.choice(purelyRandom)  # second argument p=[.2, .2, .2, .2, .1, .1]
+
+
+    #state =  (tuple(tuple(row) for row in crop),direction_advice1) #We gotta make state hashable i.e by turning it into a tuple to use it as key in dictionary
+    if best_action == None:
+        state = (tuple(tuple(row) for row in crop),direction_advice1)
+        best_qvalue = float('-inf')
+
+
+
+        final_action = None
+        if not self.train:
+            for action in possible_actions:
+                qvalue = self.qtable.get((state,action),float('-inf'))
+                if qvalue > best_qvalue:
+                    best_action = action
+                    best_qvalue = qvalue
+
+        if self.train:
+            random_prob = .2
+            if random.random() < random_prob:  # if self.train and random.random() < random_prob:
+                for action in possible_actions:
+                    qvalue = self.qtable.get((state,action),float('-inf'))
+                    if qvalue > best_qvalue:
+                        best_action = action
+                        best_qvalue = qvalue
+        """for action in possible_actions:
             qvalue = self.qtable.get((state,action),float('-inf'))
             if qvalue > best_qvalue:
                 best_action = action
-                best_qvalue = qvalue
-    if best_qvalue != float('-inf'):
-        print("State was available in the Q-Table.")
-    else:
-        print("Sad")
-    if best_qvalue == float('-inf'): #Sadly no entry found in qtable
-        best_action = random.choice(possible_actions)
-    #for element in crop:
-    #    print(element)
+                best_qvalue = qvalue"""
+
+        if best_qvalue == float('-inf'): #Sadly no entry found in qtable
+            best_action = random.choice(possible_actions)
     return best_action
 
 def state_to_features(game_state: dict) -> np.array:
