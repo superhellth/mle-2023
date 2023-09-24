@@ -37,9 +37,9 @@ def setup(self):
                 hash = int(splits[0])
                 action = splits[1][1:-1]
                 self.Q[(hash, action)] = loaded_dict[key]
-    if not self.train:
-        self.hash_to_features = dict()
-        self.hash_to_action_values = dict()
+    # if not self.train:
+    #     self.hash_to_features = dict()
+    #     self.hash_to_action_values = dict()
 
 
 def act(self, game_state: dict) -> str:
@@ -74,9 +74,9 @@ def act(self, game_state: dict) -> str:
     chosen_action = sorted([(action, action_values[action]) for action in possible_moves], key=lambda x: x[1], reverse=True)[0][0]
     default_valued_actions = [action for action in possible_moves if int(action_values[action]) == 0]
     # only take gamestates as training data, which have been explored a bit
-    if len(default_valued_actions) < 3 and not self.train:
-        self.hash_to_features[hashed_gamestate] = game_state.to_features()
-        self.hash_to_action_values[hashed_gamestate] = {action: action_values[action] for action in self.ACTIONS}
+    # if len(default_valued_actions) < 3 and not self.train:
+    #     self.hash_to_features[hashed_gamestate] = game_state.to_features()
+    #     self.hash_to_action_values[hashed_gamestate] = {action: action_values[action] for action in self.ACTIONS}
     if max(action_values[action] for action in possible_moves) == 0 and len(default_valued_actions) > 1:
         if not self.train:
             pass
@@ -91,17 +91,17 @@ def act(self, game_state: dict) -> str:
         # print(game_state.get_closest_coin_distance())
     # print(chosen_action)
 
-    if game_state.round % 10 == 0 and not self.train:
-        with open(self.TRAINING_DATA_DIRECTORY + "hash_to_features.json", "w", encoding="utf-8") as f:
-            f.write(json.dumps(self.hash_to_features, cls=NumpyEncoder))
-        with open(self.TRAINING_DATA_DIRECTORY + "hash_to_action_values.json", "w", encoding="utf-8") as f:
-            f.write(ujson.dumps(self.hash_to_action_values))
+    # if game_state.round % 10 == 0 and not self.train:
+    #     with open(self.TRAINING_DATA_DIRECTORY + "hash_to_features.json", "w", encoding="utf-8") as f:
+    #         f.write(json.dumps(self.hash_to_features, cls=NumpyEncoder))
+    #     with open(self.TRAINING_DATA_DIRECTORY + "hash_to_action_values.json", "w", encoding="utf-8") as f:
+    #         f.write(ujson.dumps(self.hash_to_action_values))
 
     return chosen_action
 
 
-class NumpyEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return json.JSONEncoder.default(self, obj)
+# class NumpyEncoder(json.JSONEncoder):
+#     def default(self, obj):
+#         if isinstance(obj, np.ndarray):
+#             return obj.tolist()
+#         return json.JSONEncoder.default(self, obj)
