@@ -101,8 +101,8 @@ def act(self, game_state: dict) -> str:
 
         # only take gamestates as training data, which have been explored a bit
         if len(default_valued_actions) < 3 and not self.train:
-            self.hash_to_features_coins_crates[hashed_gamestate] = game_state.to_features_subfield()
-            self.hash_to_action_values_coins_crates[hashed_gamestate] = {action: action_values[action] for action in self.ACTIONS}
+            self.hash_to_features_hitman[hashed_gamestate] = game_state.to_features_subfield()
+            self.hash_to_action_values_hitman[hashed_gamestate] = {action: action_values[action] for action in self.ACTIONS}
         if max(action_values[action] for action in possible_moves) == 0 and len(default_valued_actions) > 1:
             if not self.train:
                 pass
@@ -114,9 +114,9 @@ def act(self, game_state: dict) -> str:
 
         if game_state.round % 10 == 0 and not self.train:
             with open(self.TRAINING_DATA_DIRECTORY + "hash_to_features_coins_crates.json", "w", encoding="utf-8") as f:
-                f.write(json.dumps(self.hash_to_features_coins_crates, cls=NumpyEncoder))
+                f.write(json.dumps(self.hash_to_features_hitman, cls=NumpyEncoder))
             with open(self.TRAINING_DATA_DIRECTORY + "hash_to_action_values_coins_crates.json", "w", encoding="utf-8") as f:
-                f.write(ujson.dumps(self.hash_to_action_values_coins_crates))
+                f.write(ujson.dumps(self.hash_to_action_values_hitman))
 
         return chosen_action
 
@@ -136,8 +136,8 @@ def act(self, game_state: dict) -> str:
 
         # only take gamestates as training data, which have been explored a bit
         if len(default_valued_actions) < 3 and not self.train:
-            self.hash_to_features_hitman[hashed_gamestate] = game_state.to_features_subfield()
-            self.hash_to_action_values_hitman[hashed_gamestate] = {action: action_values[action] for action in self.ACTIONS}
+            self.hash_to_features_coins_crates[hashed_gamestate] = game_state.to_features_subfield()
+            self.hash_to_action_values_coins_crates[hashed_gamestate] = {action: action_values[action] for action in self.ACTIONS}
         if max(action_values[action] for action in possible_moves) == 0 and len(default_valued_actions) > 1:
             if not self.train:
                 pass
