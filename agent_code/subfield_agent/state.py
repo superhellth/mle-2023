@@ -263,7 +263,7 @@ class GameState:
         feature_dict["distance_to_next_enemy"] = distance_to_enemy
 
         #Encourage to walk more to the centre
-        steps_to_wall = [self.calculate_step_to_next_wall(self.agent_position)]
+        steps_to_wall = [self.calculate_step_to_next_wall(self.agent_position,False)]
         actions = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
         actions_away_from_wall = [action for action in actions if action not in steps_to_wall]
         feature_dict["actions_away_from_wall"] = actions_away_from_wall
@@ -964,6 +964,8 @@ class GameState:
             else:
                 opponent_cant_survive = 0
 
+            direction,distance_wall = self.calculate_step_to_next_wall(self.agent_position,True)
+
             if print_components:
                 print(f"Agent score: {self.agent_score}")
                 print(f"Closest coin distance: {self.get_closest_coin_distance()}")
@@ -971,12 +973,12 @@ class GameState:
                 print(f"Danger penalty: {danger_penalty}")
                 print(f"Number of crates: {n_crates}")
                 print(f"Crate potential: {crate_potential}")
-            return 100 * (self.agent_score + add_one) - self.get_closest_coin_distance(k=add_one) + self.get_closest_bomb_distance() - 5 * danger_penalty - 9 * n_crates + 6 * crate_potential-1*distance_to_enemy + 10*bomb_near_opponent +25*opponent_cant_survive+15*agent_in_subfield
+            return 100 * (self.agent_score + add_one) - self.get_closest_coin_distance(k=add_one) + self.get_closest_bomb_distance() - 5 * danger_penalty - 9 * n_crates + 6 * crate_potential-1*distance_to_enemy + 10*bomb_near_opponent +25*opponent_cant_survive+15*agent_in_subfield-1*distance_wall
         else:
             #print("Cant surivive")
             return -1000000
         
-    def calculate_step_to_next_wall(self,agent_position):
+    def calculate_step_to_next_wall(self,agent_position,bool_value):
 
         if agent_position[0] < 16-agent_position[0]:
             direction_in_x = "LEFT"
@@ -991,8 +993,13 @@ class GameState:
         else:
             direction_in_y = "DOWN"
             distance_in_y = 16-agent_position[1]
-
-        if distance_in_x < distance_in_y:
-            return direction_in_x
+        if bool_value == True:
+            if distance_in_x < distance_in_y:
+                return direction_in_x,distance_in_x
+            else:
+                return direction_in_y,distance_in_y
         else:
-            return direction_in_y
+            if distance_in_x < distance_in_y:
+                return direction_in_x
+            else:
+                return direction_in_y

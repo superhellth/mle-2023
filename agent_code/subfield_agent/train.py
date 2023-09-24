@@ -23,6 +23,8 @@ CLOSER_TO_ENEMY = "CLOSER_TO_ENEMY"
 WALKED_AWAY_FROM_CLOSEST_WALL = "WALKED_AWAY_FROM_CLOSEST_WALL"
 NOT_KILLED_BY_OWN_BOMB = "NOT_KILLED_BY_OWN_BOMB"
 NOT_KILLED_BY_WAITING = "NOT_KILLED_BY_WAITING"
+KILLED_THROUGH_OWN_BOMB = "KILLED_THROUGH_OWN_BOMB"
+NOT_KILLED_THROUGH_OWN_BOMB = "NOT_KILLED_THROUGH_OWN_BOMB"
 
 
 def setup_training(self):
@@ -143,7 +145,6 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
             game_state_before = self.experience_buffer[game_number][future_step -
                                                                     1]["old_game_state"]
             game_state_after = self.experience_buffer[game_number][future_step]["old_game_state"]
-
             game_state_before_feature = game_state_before.to_features_subfield()
             game_state_after_feature = game_state_after.to_features_subfield()
             print_components = False
@@ -162,6 +163,18 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
                 events_for_rewards.append(KILLED_BY_OWN_BOMB)
             else:
                 events_for_rewards.append(NOT_KILLED_BY_OWN_BOMB)
+
+            if current_action == "BOMB":
+                killed_self = False
+                for i in range(0, 4):
+                    try:
+                        if "KILLED_SELF" in self.experience_buffer[game_number][future_step + i]["events"]:
+                            events_for_rewards.append(KILLED_THROUGH_OWN_BOMB)
+                    except IndexError:
+                        pass
+                if killed_self == False:
+                    events_for_rewards.append(NOT_KILLED_THROUGH_OWN_BOMB)
+
             # if current_action == "WAIT":
             #     print_components = True
 
@@ -325,8 +338,9 @@ def reward_from_events(self, events: List[str]) -> int:
         e.SURVIVED_ROUND:100,
         e.COIN_COLLECTED: 100,
         WALKED_AWAY_FROM_CLOSEST_WALL:20,
-        e.BOMB_DROPPED:-50,
-        e.WAITED:-25
+        e.WAITED:-25,
+        KILLED_THROUGH_OWN_BOMB:-100,
+        NOT_KILLED_THROUGH_OWN_BOMB:25
     }
     #print(events)
     """e.MOVED_UP:-.001,
