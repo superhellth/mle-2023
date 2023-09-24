@@ -358,7 +358,7 @@ def act(self, game_state: dict) -> str:
                     best_qvalue = qvalue
 
         if self.train:
-            random_prob = .6
+            random_prob = .8
             if random.random() < random_prob:  # if self.train and random.random() < random_prob:
                 for action in possible_actions:
                     qvalue = self.qtable.get((state,action),float('-inf'))
