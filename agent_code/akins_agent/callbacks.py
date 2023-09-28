@@ -329,7 +329,7 @@ def act(self, game_state: dict) -> str:
                     best_qvalue = qvalue
 
         if self.train:
-            random_prob = 0.1#self.reset_probability*self.round_counter2/9000 #First we explore, then we use our experience
+            random_prob = 0.7#self.reset_probability*self.round_counter2/9000 #First we explore, then we use our experience
             #print(random_prob)
             if random_prob > 0.99:
                 self.round_counter2 = 0

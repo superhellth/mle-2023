@@ -359,6 +359,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     x = old_game_state['self'][3][0]  # player_x_coordinate
     y = old_game_state['self'][3][1]  # player_y_coordinate
 
+    x2 = new_game_state['self'][3][0]  # player_x_coordinate
+    y2 = new_game_state['self'][3][1]  # player_y_coordinate
     bomb_active = not old_game_state['self'][2]
     #action = self_action
     action = self_action
@@ -386,7 +388,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     '''
 
     direction_advice1 = coinDirection(x, y, old_game_state['field'], crop1,self.crop_size)
-    direction_advice2 = coinDirection(x, y, new_game_state['field'], crop2,self.crop_size)
+    direction_advice2 = coinDirection(x2, y2, new_game_state['field'], crop2,self.crop_size)
 
     '''crop_array = [crop1_2, crop1_3, crop1_4]
     new_action_array = [action, action, action]
@@ -445,7 +447,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         if escape_route is not False:
             if action == escape_route[0]:
                 #print("Nice move! bonus!")
-                reward+=100
+                reward+=50
         else:
             #print("Bad move! Fine!")
             reward-= 50
@@ -455,12 +457,16 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         if bomb_x == math.floor(self.crop_size/2):
             #print("Axis with bomb same")
             reward -= 50
+        else:
+            reward+=50
         if bomb_y == math.floor(self.crop_size/2):
             #print("Axis with bomb same")
             reward -= 50
+        else:
+            reward+=50
 
 
-    '''#Negative reward for walking from safe zone into bomb
+    #Negative reward for walking from safe zone into bomb
     if crop1[crop_self_xy][crop_self_xy] == 0 and crop1[crop_self_xy+1][crop_self_xy] in [4,5] and action == 'RIGHT':
         #print("Brutal mistake")
         reward-=100
@@ -472,7 +478,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         reward-=100
     if crop1[crop_self_xy][crop_self_xy] == 0 and crop1[crop_self_xy][crop_self_xy-1] in [4,5] and action == 'UP':
         #print("Brutal mistake")
-        reward-=100'''
+        reward-=100
 
 
     '''for i in range(len(self.history) - 1):
@@ -481,23 +487,23 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
                 reward -= 10  # Penalize for opposite directions between adjacent moves'''
 
     if 'INVALID_ACTION' in events:
-        reward-=1000 #kann passieren, da bombe -1 tiles uberschreibt
+        reward-=100 #kann passieren, da bombe -1 tiles uberschreibt
     if 'GOT_KILLED' in events:
-        reward-=10000
+        reward-=4000
     '''if 'SURVIVE_ROUND' in events:
         reward+=500 #Keep this as big as the number of steps'''
     if 'CRATE_DESTROYED' in events:
-        reward += 200
+        reward += 400
     if 'COIN_FOUND' not in events:
         reward+=30
     if 'COIN_COLLECTED' in events:
-        reward+=100
+        reward+=200
     if 'COIN_FOUND' in events:
         reward+=50
     if 'WAIT' in events:
         reward+=2
     if 'BOMB' in events: #Hier kann man präziser werden. Droppe nur wenn an KRater drumherum liegt oder Gegner
-        reward+=50
+        reward-=200
     if 'UP' in events:
         reward += 2
     if 'DOWN' in events:
@@ -533,7 +539,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
     x_new = new_game_state['self'][3][0]  # player_x_coordinate
     y_new = new_game_state['self'][3][1]  # player_y_coordinate
-    epsilon = 0.99 #0.7
+    epsilon = 0.6 #0.7
     def maxQ(state):
         best_qvalue = float('-inf')
         possible_actions = filterInvalidActions(x_new,y_new,new_game_state['field'],new_game_state['self'][2],['UP', 'RIGHT', 'DOWN', 'LEFT','WAIT','BOMB'])
