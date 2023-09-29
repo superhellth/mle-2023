@@ -3,7 +3,7 @@ import ujson
 import json
 import random
 from agent_code.subfield_agent.state import GameState as gs1
-from agent_code.nicos_agent.state import GameState as gs2
+from agent_code.ql_agent.state import GameState as gs2
 from collections import defaultdict
 
 import numpy as np
