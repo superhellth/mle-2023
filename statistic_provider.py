@@ -68,43 +68,33 @@ def calculate_average_stats(data):
 
 
 
-# Example usage
-with open("test_statistics.json", 'r') as file:
-    try:
-        data = json.load(file)
-    except FileNotFoundError:
-        data=[]
-        print("Did not work")
+# # Example usage
+# with open("test_statistics.json", 'r') as file:
+#     try:
+#         data = json.load(file)
+#     except FileNotFoundError:
+#         data=[]
+#         print("Did not work")
 
-average_stats = calculate_average_stats(data)
-attributes = average_stats['ql_agent'].keys()
-agents = average_stats.keys()
-average_stats["akins_agent"]["invalid"] = 0.0
-average_stats["subfield_agent"]["invalid"] = 0.0
+# average_stats = calculate_average_stats(data)
+# attributes = average_stats['ql_agent'].keys()
+# agents = ["rule_based_agent", "ql_agent", "akins_agent", "subfield_agent"]
+# average_stats["akins_agent"]["invalid"] = 0.0
+# average_stats["subfield_agent"]["invalid"] = 0.0
 
-penguin_means = {}
+# # print(average_stats)
 
-for attr in attributes:
-    penguin_means[attr] = tuple(average_stats[agent][attr] for agent in agents)
+# for attribute in attributes:
+#     keys = ["Rule Based", "Abstract Feature", "Cropped Field 1", "Cropped Field 2"]
+#     values = list([round(average_stats[agent][attribute], 2) for agent in agents])
 
-
-x = np.arange(len(agents))  # the label locations
-width = 0.25  # the width of the bars
-multiplier = 0
-
-fig, ax = plt.subplots(layout='constrained')
-
-for attribute, measurement in penguin_means.items():
-    offset = width * multiplier
-    rects = ax.bar(x + offset, measurement, width, label=attribute)
-    ax.bar_label(rects, padding=3)
-    multiplier += 1
-
-# Add some text for labels, title and custom x-axis tick labels, etc.
-ax.set_ylabel('Length (mm)')
-ax.set_title('Penguin attributes by species')
-ax.set_xticks(x + width, agents)
-ax.legend(loc='upper left', ncols=3)
-ax.set_ylim(0, 250)
-
-plt.show()
+#     plt.bar(keys, values, color=["#219C90", "#E9B824", "#EE9322", "#D83F31"])
+#     for i, value in enumerate(values):
+#         plt.text(i, value, str(value), ha='center', va='bottom')
+#     # plt.xlabel("")
+#     # plt.ylabel(ylabel)
+#     title_dict = {"rounds": "","time": "Time ???", "steps": "Time steps survived", "moves": "Moves made", "bombs": "Bombs placed", "crates": "Crates blown up", "coins": "Coins collected", "invalid": "Invalid moves tried", "suicides": "Suicides commited", "score": "Score achieved", "kills": "Opponents killed"}
+#     plt.title(title_dict[attribute])
+#     plt.xlabel("Agent")
+#     plt.ylabel(attribute)
+#     plt.show()
